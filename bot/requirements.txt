@@ -1,0 +1,7 @@
+aiogram>=3.3
+aiohttp>=3.9
+redis>=5.0
+python-dotenv>=1.0
+pydantic>=2.5
+pydantic-settings>=2.1
+PyJWT>=2.8

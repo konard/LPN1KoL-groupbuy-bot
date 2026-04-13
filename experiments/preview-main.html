@@ -1,0 +1,2562 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GroupBuy - Main Preview</title>
+    <style>
+/* GroupBuy Bot - Telegram Dark Design System */
+
+/* CSS Variables - Telegram Dark Color Palette */
+:root {
+    /* Primary accent */
+    --tg-primary: #2b5278;
+    --tg-primary-dark: #1e3d5c;
+    --tg-primary-light: #3a6a9a;
+
+    /* Background colors - dark theme by default */
+    --tg-bg-primary: #17212b;
+    --tg-bg-secondary: #0e1621;
+    --tg-bg-tertiary: #1e2c3a;
+    --tg-bg-card: #1e2c3a;
+    --tg-bg-input: #242f3d;
+    --tg-bg-app: #0a0a0a;
+
+    /* Text colors */
+    --tg-text-primary: #ffffff;
+    --tg-text-secondary: #8e9aaf;
+    --tg-text-muted: #6d7f8f;
+    --tg-text-link: #5b9bd5;
+
+    /* Message colors */
+    --tg-msg-outgoing: #2b5278;
+    --tg-msg-incoming: #182533;
+    --tg-msg-system: rgba(0, 0, 0, 0.3);
+
+    /* Status colors */
+    --tg-online: #4fae4e;
+    --tg-error: #df3f40;
+    --tg-warning: #f5a623;
+    --tg-success: #4fae4e;
+
+    /* Border colors */
+    --tg-border: #2f3b47;
+    --tg-border-light: #3a4654;
+
+    /* Shadows */
+    --tg-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    --tg-shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --tg-shadow-large: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+    /* Transitions */
+    --tg-transition: 0.2s ease;
+    --tg-transition-slow: 0.4s ease;
+
+    /* Typography */
+    --tg-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+    --tg-font-size-xs: 11px;
+    --tg-font-size-sm: 12px;
+    --tg-font-size-base: 14px;
+    --tg-font-size-md: 15px;
+    --tg-font-size-lg: 16px;
+    --tg-font-size-xl: 18px;
+    --tg-font-size-xxl: 20px;
+
+    /* Spacing */
+    --tg-spacing-xs: 4px;
+    --tg-spacing-sm: 8px;
+    --tg-spacing-md: 12px;
+    --tg-spacing-lg: 16px;
+    --tg-spacing-xl: 24px;
+
+    /* Border radius */
+    --tg-radius-sm: 4px;
+    --tg-radius-md: 8px;
+    --tg-radius-lg: 12px;
+    --tg-radius-xl: 16px;
+    --tg-radius-xxl: 20px;
+    --tg-radius-round: 50%;
+
+    /* Sizes */
+    --tg-sidebar-width: 300px;
+    --tg-header-height: 56px;
+    --tg-input-height: 48px;
+    --tg-avatar-sm: 32px;
+    --tg-avatar-md: 42px;
+    --tg-avatar-lg: 54px;
+    --tg-max-width: 600px;
+}
+
+/* Light theme override */
+[data-theme="light"] {
+    --tg-primary: #2481cc;
+    --tg-primary-dark: #1b6aaa;
+    --tg-primary-light: #4aa3df;
+
+    --tg-bg-primary: #ffffff;
+    --tg-bg-secondary: #f0f2f5;
+    --tg-bg-tertiary: #e6ebee;
+    --tg-bg-card: #ffffff;
+    --tg-bg-input: #f0f2f5;
+    --tg-bg-app: #e6eaed;
+
+    --tg-text-primary: #000000;
+    --tg-text-secondary: #707579;
+    --tg-text-muted: #8d969c;
+
+    --tg-msg-outgoing: #effdde;
+    --tg-msg-incoming: #ffffff;
+
+    --tg-border: #dadce0;
+    --tg-border-light: #e8e8e8;
+}
+
+/* Reset and base styles */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: var(--tg-font-family);
+    font-size: var(--tg-font-size-base);
+    line-height: 1.5;
+    color: var(--tg-text-primary);
+    background-color: var(--tg-bg-app);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+    color: var(--tg-text-link);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    outline: none;
+}
+
+input, textarea, select {
+    font-family: inherit;
+    font-size: inherit;
+    border: none;
+    outline: none;
+    color: var(--tg-text-primary);
+}
+
+/* ============================================
+   AUTH PAGE STYLES
+   ============================================ */
+
+.auth-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--tg-bg-app);
+    padding: var(--tg-spacing-lg);
+}
+
+.auth-container {
+    width: 100%;
+    max-width: 420px;
+    animation: fadeInUp 0.5s ease;
+}
+
+.auth-logo {
+    text-align: center;
+    margin-bottom: var(--tg-spacing-xl);
+}
+
+.auth-logo-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, var(--tg-primary), var(--tg-primary-light));
+    border-radius: var(--tg-radius-xxl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto var(--tg-spacing-md);
+    box-shadow: 0 8px 24px rgba(43, 82, 120, 0.4);
+}
+
+.auth-logo-title {
+    font-size: var(--tg-font-size-xxl);
+    font-weight: 700;
+    color: var(--tg-text-primary);
+    margin-bottom: 4px;
+}
+
+.auth-logo-subtitle {
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-secondary);
+}
+
+.auth-card {
+    background-color: var(--tg-bg-primary);
+    border-radius: var(--tg-radius-xl);
+    padding: var(--tg-spacing-xl);
+    box-shadow: var(--tg-shadow-large);
+    border: 1px solid var(--tg-border);
+}
+
+.auth-card-title {
+    font-size: var(--tg-font-size-xl);
+    font-weight: 600;
+    color: var(--tg-text-primary);
+    margin-bottom: var(--tg-spacing-sm);
+}
+
+.auth-card-subtitle {
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-secondary);
+    margin-bottom: var(--tg-spacing-xl);
+    line-height: 1.5;
+}
+
+.auth-step {
+    display: none;
+}
+
+.auth-step.active {
+    display: block;
+    animation: fadeInRight 0.3s ease;
+}
+
+.auth-form-group {
+    margin-bottom: var(--tg-spacing-lg);
+}
+
+.auth-label {
+    display: block;
+    font-size: var(--tg-font-size-sm);
+    font-weight: 500;
+    color: var(--tg-text-secondary);
+    margin-bottom: var(--tg-spacing-xs);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.auth-input-wrapper {
+    position: relative;
+}
+
+.auth-input {
+    width: 100%;
+    height: var(--tg-input-height);
+    padding: 0 var(--tg-spacing-lg);
+    background-color: var(--tg-bg-input);
+    border: 1.5px solid var(--tg-border);
+    border-radius: var(--tg-radius-lg);
+    font-size: var(--tg-font-size-md);
+    color: var(--tg-text-primary);
+    transition: border-color var(--tg-transition), background-color var(--tg-transition), box-shadow var(--tg-transition);
+}
+
+.auth-input:focus {
+    border-color: var(--tg-primary-light);
+    background-color: var(--tg-bg-tertiary);
+    box-shadow: 0 0 0 3px rgba(43, 82, 120, 0.2);
+}
+
+.auth-input::placeholder {
+    color: var(--tg-text-muted);
+}
+
+.auth-input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--tg-text-muted);
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+}
+
+.auth-input.with-icon {
+    padding-left: 44px;
+}
+
+.auth-code-inputs {
+    display: flex;
+    gap: var(--tg-spacing-sm);
+    justify-content: center;
+    margin-bottom: var(--tg-spacing-lg);
+}
+
+.auth-code-digit {
+    width: 52px;
+    height: 56px;
+    text-align: center;
+    font-size: var(--tg-font-size-xxl);
+    font-weight: 600;
+    background-color: var(--tg-bg-input);
+    border: 1.5px solid var(--tg-border);
+    border-radius: var(--tg-radius-lg);
+    color: var(--tg-text-primary);
+    transition: border-color var(--tg-transition), box-shadow var(--tg-transition);
+    caret-color: var(--tg-primary-light);
+}
+
+.auth-code-digit:focus {
+    border-color: var(--tg-primary-light);
+    box-shadow: 0 0 0 3px rgba(43, 82, 120, 0.2);
+    outline: none;
+}
+
+.auth-btn {
+    width: 100%;
+    height: var(--tg-input-height);
+    background: linear-gradient(135deg, var(--tg-primary), var(--tg-primary-light));
+    color: #ffffff;
+    border-radius: var(--tg-radius-lg);
+    font-size: var(--tg-font-size-md);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    transition: all var(--tg-transition);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(43, 82, 120, 0.35);
+}
+
+.auth-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    transition: left 0.5s ease;
+}
+
+.auth-btn:hover::before {
+    left: 100%;
+}
+
+.auth-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(43, 82, 120, 0.45);
+}
+
+.auth-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(43, 82, 120, 0.3);
+}
+
+.auth-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tg-spacing-xs);
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-secondary);
+    cursor: pointer;
+    margin-bottom: var(--tg-spacing-lg);
+    transition: color var(--tg-transition);
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+.auth-back-link:hover {
+    color: var(--tg-text-primary);
+}
+
+.auth-resend {
+    text-align: center;
+    margin-top: var(--tg-spacing-lg);
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-text-muted);
+}
+
+.auth-resend-link {
+    color: var(--tg-text-link);
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.auth-resend-link:hover {
+    text-decoration: underline;
+}
+
+/* ============================================
+   MAIN APP LAYOUT
+   ============================================ */
+
+.app-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    background-color: var(--tg-bg-app);
+}
+
+.app-container {
+    display: flex;
+    width: 100%;
+    max-width: var(--tg-max-width);
+    height: 100vh;
+    overflow: hidden;
+    background-color: var(--tg-bg-primary);
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.8);
+    flex-direction: column;
+}
+
+/* ============================================
+   TOP SLIDER
+   ============================================ */
+
+.top-slider-section {
+    background-color: var(--tg-bg-tertiary);
+    border-bottom: 1px solid var(--tg-border);
+    padding: var(--tg-spacing-lg) 0 var(--tg-spacing-md);
+    flex-shrink: 0;
+}
+
+.slider-viewport {
+    overflow: hidden;
+    position: relative;
+}
+
+.slider-track {
+    display: flex;
+    transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.slider-slide {
+    min-width: 100%;
+    padding: 0 var(--tg-spacing-lg);
+    box-sizing: border-box;
+}
+
+.slider-slide-inner {
+    background-color: var(--tg-bg-primary);
+    border-radius: var(--tg-radius-xl);
+    padding: var(--tg-spacing-lg);
+    border: 1px solid var(--tg-border);
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    gap: var(--tg-spacing-md);
+    cursor: pointer;
+    transition: background-color var(--tg-transition), transform var(--tg-transition);
+    animation: fadeIn 0.3s ease;
+}
+
+.slider-slide-inner:hover {
+    background-color: var(--tg-bg-input);
+}
+
+.slider-slide-inner:active {
+    transform: scale(0.98);
+}
+
+.slider-slide-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--tg-radius-md);
+    background: linear-gradient(135deg, var(--tg-primary), var(--tg-primary-light));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(43, 82, 120, 0.4);
+}
+
+.slider-slide-text {
+    flex: 1;
+}
+
+.slider-slide-title {
+    font-size: var(--tg-font-size-md);
+    font-weight: 600;
+    color: var(--tg-text-primary);
+    margin-bottom: 2px;
+}
+
+.slider-slide-desc {
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-text-secondary);
+    line-height: 1.4;
+}
+
+/* Quick action buttons slide */
+.slider-actions {
+    display: flex;
+    gap: var(--tg-spacing-sm);
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: var(--tg-spacing-sm) 0;
+}
+
+.slider-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--tg-spacing-xs);
+    padding: var(--tg-spacing-md) var(--tg-spacing-lg);
+    background-color: var(--tg-bg-primary);
+    border: 1px solid var(--tg-border);
+    border-radius: var(--tg-radius-lg);
+    cursor: pointer;
+    transition: all var(--tg-transition);
+    min-width: 80px;
+    flex: 1;
+    color: var(--tg-text-primary);
+}
+
+.slider-action-btn:hover {
+    background-color: var(--tg-primary);
+    border-color: var(--tg-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(43, 82, 120, 0.4);
+}
+
+.slider-action-btn:active {
+    transform: translateY(0);
+}
+
+.slider-action-icon {
+    color: var(--tg-primary-light);
+    transition: color var(--tg-transition);
+}
+
+.slider-action-btn:hover .slider-action-icon {
+    color: #ffffff;
+}
+
+.slider-action-label {
+    font-size: var(--tg-font-size-xs);
+    font-weight: 500;
+    color: var(--tg-text-secondary);
+    transition: color var(--tg-transition);
+    text-align: center;
+}
+
+.slider-action-btn:hover .slider-action-label {
+    color: #ffffff;
+}
+
+/* Slider dots */
+.slider-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: var(--tg-spacing-sm) 0 0;
+}
+
+.slider-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--tg-radius-round);
+    background-color: var(--tg-border-light);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+    padding: 0;
+}
+
+.slider-dot.active {
+    background-color: var(--tg-primary-light);
+    width: 18px;
+    border-radius: 3px;
+}
+
+/* ============================================
+   MAIN CONTENT & CHAT LAYOUT
+   ============================================ */
+
+.main-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Sidebar (chat list) */
+.sidebar {
+    width: 100%;
+    background-color: var(--tg-bg-primary);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Main content area */
+.main-content {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    background-color: var(--tg-bg-secondary);
+    overflow: hidden;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+}
+
+.main-content.open {
+    display: flex;
+}
+
+/* ============================================
+   HEADER COMPONENTS
+   ============================================ */
+
+.header {
+    height: var(--tg-header-height);
+    background-color: var(--tg-bg-primary);
+    border-bottom: 1px solid var(--tg-border);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--tg-spacing-lg);
+    gap: var(--tg-spacing-md);
+    flex-shrink: 0;
+}
+
+.header-title {
+    font-size: var(--tg-font-size-lg);
+    font-weight: 600;
+    color: var(--tg-text-primary);
+}
+
+.header-subtitle {
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-text-secondary);
+}
+
+/* Search bar */
+.search-bar {
+    position: relative;
+    padding: var(--tg-spacing-sm) var(--tg-spacing-md);
+    flex-shrink: 0;
+}
+
+.search-input {
+    width: 100%;
+    height: 36px;
+    padding: 0 var(--tg-spacing-md) 0 40px;
+    background-color: var(--tg-bg-input);
+    border-radius: var(--tg-radius-xxl);
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-primary);
+    transition: background-color var(--tg-transition), box-shadow var(--tg-transition);
+    border: 1px solid transparent;
+}
+
+.search-input:focus {
+    background-color: var(--tg-bg-tertiary);
+    box-shadow: 0 0 0 2px rgba(43, 82, 120, 0.3);
+}
+
+.search-input::placeholder {
+    color: var(--tg-text-muted);
+}
+
+.search-icon {
+    position: absolute;
+    left: 26px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--tg-text-muted);
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+}
+
+/* ============================================
+   CHAT LIST
+   ============================================ */
+
+.chat-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.chat-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.chat-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chat-list::-webkit-scrollbar-thumb {
+    background-color: var(--tg-border);
+    border-radius: 2px;
+}
+
+.chat-item {
+    display: flex;
+    align-items: center;
+    padding: var(--tg-spacing-sm) var(--tg-spacing-md);
+    gap: var(--tg-spacing-md);
+    cursor: pointer;
+    transition: background-color var(--tg-transition);
+}
+
+.chat-item:hover {
+    background-color: var(--tg-bg-tertiary);
+}
+
+.chat-item.active {
+    background-color: var(--tg-primary);
+}
+
+.chat-item.active .chat-title,
+.chat-item.active .chat-message,
+.chat-item.active .chat-time {
+    color: #ffffff;
+}
+
+.chat-avatar {
+    width: var(--tg-avatar-lg);
+    height: var(--tg-avatar-lg);
+    border-radius: var(--tg-radius-round);
+    background-color: var(--tg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: var(--tg-font-size-xl);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.chat-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 2px;
+}
+
+.chat-title {
+    font-size: var(--tg-font-size-md);
+    font-weight: 500;
+    color: var(--tg-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-time {
+    font-size: var(--tg-font-size-xs);
+    color: var(--tg-text-muted);
+    flex-shrink: 0;
+    margin-left: var(--tg-spacing-sm);
+}
+
+.chat-message {
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-badge {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    background-color: var(--tg-primary-light);
+    border-radius: 10px;
+    color: #ffffff;
+    font-size: var(--tg-font-size-xs);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ============================================
+   PROCUREMENT SLIDER (horizontal cards)
+   ============================================ */
+
+.procurement-slider {
+    background-color: var(--tg-bg-primary);
+    border-bottom: 1px solid var(--tg-border);
+    padding: var(--tg-spacing-md);
+    flex-shrink: 0;
+}
+
+.slider-title {
+    font-size: var(--tg-font-size-xs);
+    font-weight: 600;
+    color: var(--tg-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: var(--tg-spacing-sm);
+}
+
+.slider-container {
+    display: flex;
+    gap: var(--tg-spacing-md);
+    overflow-x: auto;
+    padding-bottom: var(--tg-spacing-sm);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    scrollbar-color: var(--tg-border) transparent;
+    -webkit-overflow-scrolling: touch;
+}
+
+.slider-container::-webkit-scrollbar {
+    height: 3px;
+}
+
+.slider-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.slider-container::-webkit-scrollbar-thumb {
+    background-color: var(--tg-border);
+    border-radius: 2px;
+}
+
+.procurement-card {
+    min-width: 190px;
+    max-width: 190px;
+    background-color: var(--tg-bg-tertiary);
+    border-radius: var(--tg-radius-lg);
+    padding: var(--tg-spacing-md);
+    cursor: pointer;
+    transition: transform var(--tg-transition), box-shadow var(--tg-transition);
+    scroll-snap-align: start;
+    border: 1px solid var(--tg-border);
+}
+
+.procurement-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--tg-shadow-medium);
+    border-color: var(--tg-primary);
+}
+
+.procurement-title {
+    font-size: var(--tg-font-size-base);
+    font-weight: 500;
+    color: var(--tg-text-primary);
+    margin-bottom: var(--tg-spacing-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.procurement-info {
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-text-secondary);
+    margin-bottom: var(--tg-spacing-sm);
+}
+
+.procurement-progress {
+    height: 4px;
+    background-color: var(--tg-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.procurement-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--tg-primary), var(--tg-primary-light));
+    border-radius: 2px;
+    transition: width 0.5s ease;
+}
+
+.procurement-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--tg-spacing-xs);
+    font-size: var(--tg-font-size-xs);
+    color: var(--tg-text-muted);
+}
+
+/* ============================================
+   MESSAGE AREA
+   ============================================ */
+
+.message-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--tg-spacing-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--tg-spacing-sm);
+}
+
+.message-area::-webkit-scrollbar {
+    width: 4px;
+}
+
+.message-area::-webkit-scrollbar-thumb {
+    background-color: var(--tg-border);
+    border-radius: 2px;
+}
+
+.message {
+    max-width: 72%;
+    padding: var(--tg-spacing-sm) var(--tg-spacing-md);
+    border-radius: var(--tg-radius-lg);
+    position: relative;
+    word-wrap: break-word;
+    animation: messageIn 0.2s ease;
+}
+
+.message.incoming {
+    align-self: flex-start;
+    background-color: var(--tg-msg-incoming);
+    border-bottom-left-radius: var(--tg-radius-sm);
+}
+
+.message.outgoing {
+    align-self: flex-end;
+    background-color: var(--tg-msg-outgoing);
+    border-bottom-right-radius: var(--tg-radius-sm);
+}
+
+.message.system {
+    align-self: center;
+    background-color: rgba(0, 0, 0, 0.4);
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-text-secondary);
+    border-radius: var(--tg-radius-xxl);
+    padding: var(--tg-spacing-xs) var(--tg-spacing-md);
+    max-width: none;
+}
+
+.message-sender {
+    font-size: var(--tg-font-size-sm);
+    font-weight: 600;
+    color: var(--tg-primary-light);
+    margin-bottom: 2px;
+}
+
+.message-text {
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-primary);
+    line-height: 1.5;
+}
+
+.message-time {
+    font-size: var(--tg-font-size-xs);
+    color: var(--tg-text-muted);
+    text-align: right;
+    margin-top: 2px;
+}
+
+.message-date-divider {
+    text-align: center;
+    margin: var(--tg-spacing-lg) 0;
+}
+
+.message-date-divider span {
+    background-color: rgba(0, 0, 0, 0.45);
+    color: #e0e0e0;
+    padding: 4px var(--tg-spacing-md);
+    border-radius: var(--tg-radius-xxl);
+    font-size: var(--tg-font-size-xs);
+}
+
+/* ============================================
+   MESSAGE INPUT
+   ============================================ */
+
+.message-input-area {
+    background-color: var(--tg-bg-primary);
+    border-top: 1px solid var(--tg-border);
+    padding: var(--tg-spacing-md);
+    display: flex;
+    align-items: flex-end;
+    gap: var(--tg-spacing-sm);
+    flex-shrink: 0;
+}
+
+.message-input-container {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    background-color: var(--tg-bg-input);
+    border-radius: var(--tg-radius-xxl);
+    padding: var(--tg-spacing-sm) var(--tg-spacing-md);
+    border: 1px solid var(--tg-border);
+    transition: border-color var(--tg-transition);
+}
+
+.message-input-container:focus-within {
+    border-color: var(--tg-primary);
+}
+
+.message-input {
+    flex: 1;
+    max-height: 150px;
+    resize: none;
+    background: transparent;
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-primary);
+    line-height: 1.5;
+}
+
+.message-input::placeholder {
+    color: var(--tg-text-muted);
+}
+
+.send-button {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--tg-radius-round);
+    background: linear-gradient(135deg, var(--tg-primary), var(--tg-primary-light));
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--tg-transition);
+    box-shadow: 0 2px 8px rgba(43, 82, 120, 0.4);
+    flex-shrink: 0;
+}
+
+.send-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 14px rgba(43, 82, 120, 0.5);
+}
+
+.send-button:active {
+    transform: scale(0.95);
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--tg-spacing-sm) var(--tg-spacing-lg);
+    font-size: var(--tg-font-size-base);
+    font-weight: 500;
+    border-radius: var(--tg-radius-md);
+    transition: all var(--tg-transition);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--tg-primary), var(--tg-primary-light));
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(43, 82, 120, 0.35);
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(43, 82, 120, 0.5);
+}
+
+.btn-secondary {
+    background-color: var(--tg-bg-tertiary);
+    color: var(--tg-text-primary);
+    border: 1px solid var(--tg-border);
+}
+
+.btn-secondary:hover {
+    background-color: var(--tg-bg-input);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 1.5px solid var(--tg-primary);
+    color: var(--tg-primary-light);
+}
+
+.btn-outline:hover {
+    background-color: var(--tg-primary);
+    color: #ffffff;
+}
+
+.btn-round {
+    border-radius: var(--tg-radius-xxl);
+}
+
+.btn-icon {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: var(--tg-radius-round);
+    background-color: transparent;
+    color: var(--tg-text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--tg-transition), color var(--tg-transition);
+}
+
+.btn-icon:hover {
+    background-color: var(--tg-bg-tertiary);
+    color: var(--tg-text-primary);
+}
+
+/* ============================================
+   FORMS
+   ============================================ */
+
+.form-group {
+    margin-bottom: var(--tg-spacing-lg);
+}
+
+.form-label {
+    display: block;
+    font-size: var(--tg-font-size-sm);
+    font-weight: 500;
+    color: var(--tg-text-secondary);
+    margin-bottom: var(--tg-spacing-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.form-input {
+    width: 100%;
+    height: var(--tg-input-height);
+    padding: 0 var(--tg-spacing-md);
+    background-color: var(--tg-bg-input);
+    border: 1.5px solid var(--tg-border);
+    border-radius: var(--tg-radius-lg);
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-primary);
+    transition: border-color var(--tg-transition), background-color var(--tg-transition), box-shadow var(--tg-transition);
+}
+
+.form-input:focus {
+    background-color: var(--tg-bg-tertiary);
+    border-color: var(--tg-primary-light);
+    box-shadow: 0 0 0 3px rgba(43, 82, 120, 0.15);
+}
+
+.form-input::placeholder {
+    color: var(--tg-text-muted);
+}
+
+.form-textarea {
+    min-height: 100px;
+    padding: var(--tg-spacing-md);
+    resize: vertical;
+}
+
+.form-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%238e9aaf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+    padding-right: 40px;
+    cursor: pointer;
+}
+
+.form-select option {
+    background-color: var(--tg-bg-tertiary);
+    color: var(--tg-text-primary);
+}
+
+.form-error {
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-error);
+    margin-top: var(--tg-spacing-xs);
+}
+
+/* ============================================
+   PERSONAL CABINET
+   ============================================ */
+
+.cabinet {
+    padding: var(--tg-spacing-xl);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.cabinet::-webkit-scrollbar {
+    width: 4px;
+}
+
+.cabinet::-webkit-scrollbar-thumb {
+    background-color: var(--tg-border);
+    border-radius: 2px;
+}
+
+.cabinet-header {
+    display: flex;
+    align-items: center;
+    gap: var(--tg-spacing-lg);
+    margin-bottom: var(--tg-spacing-xl);
+}
+
+.cabinet-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--tg-radius-round);
+    background: linear-gradient(135deg, var(--tg-primary), var(--tg-primary-light));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(43, 82, 120, 0.4);
+    flex-shrink: 0;
+}
+
+.cabinet-info h2 {
+    font-size: var(--tg-font-size-xxl);
+    font-weight: 600;
+    color: var(--tg-text-primary);
+    margin-bottom: 4px;
+}
+
+.cabinet-role {
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-secondary);
+}
+
+.cabinet-balance {
+    background-color: var(--tg-bg-tertiary);
+    border-radius: var(--tg-radius-xl);
+    padding: var(--tg-spacing-lg);
+    margin-bottom: var(--tg-spacing-lg);
+    border: 1px solid var(--tg-border);
+}
+
+.balance-label {
+    font-size: var(--tg-font-size-sm);
+    color: var(--tg-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--tg-spacing-xs);
+}
+
+.balance-amount {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--tg-text-primary);
+    margin-bottom: var(--tg-spacing-md);
+}
+
+.balance-actions {
+    display: flex;
+    gap: var(--tg-spacing-sm);
+}
+
+.cabinet-menu {
+    background-color: var(--tg-bg-tertiary);
+    border-radius: var(--tg-radius-xl);
+    overflow: hidden;
+    border: 1px solid var(--tg-border);
+}
+
+.cabinet-menu-item {
+    display: flex;
+    align-items: center;
+    padding: var(--tg-spacing-md) var(--tg-spacing-lg);
+    gap: var(--tg-spacing-md);
+    cursor: pointer;
+    transition: background-color var(--tg-transition);
+    border-bottom: 1px solid var(--tg-border);
+}
+
+.cabinet-menu-item:last-child {
+    border-bottom: none;
+}
+
+.cabinet-menu-item:hover {
+    background-color: var(--tg-bg-input);
+}
+
+.cabinet-menu-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--tg-primary-light);
+    flex-shrink: 0;
+}
+
+.cabinet-menu-text {
+    flex: 1;
+    font-size: var(--tg-font-size-md);
+    color: var(--tg-text-primary);
+}
+
+.cabinet-menu-badge {
+    background-color: var(--tg-primary);
+    color: #ffffff;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: var(--tg-font-size-xs);
+    font-weight: 600;
+}
+
+.cabinet-menu-arrow {
+    color: var(--tg-text-muted);
+    flex-shrink: 0;
+}
+
+/* ============================================
+   MODAL / POPUP
+   ============================================ */
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--tg-transition), visibility var(--tg-transition);
+    backdrop-filter: blur(4px);
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal {
+    background-color: var(--tg-bg-primary);
+    border-radius: var(--tg-radius-xl) var(--tg-radius-xl) 0 0;
+    width: 100%;
+    max-width: var(--tg-max-width);
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    border: 1px solid var(--tg-border);
+    border-bottom: none;
+}
+
+.modal-overlay.active .modal {
+    transform: translateY(0);
+}
+
+.modal-handle {
+    width: 40px;
+    height: 4px;
+    background-color: var(--tg-border-light);
+    border-radius: 2px;
+    margin: var(--tg-spacing-md) auto var(--tg-spacing-sm);
+}
+
+.modal-header {
+    padding: var(--tg-spacing-md) var(--tg-spacing-lg) var(--tg-spacing-lg);
+    border-bottom: 1px solid var(--tg-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-title {
+    font-size: var(--tg-font-size-lg);
+    font-weight: 600;
+    color: var(--tg-text-primary);
+}
+
+.modal-close {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--tg-radius-round);
+    background-color: var(--tg-bg-tertiary);
+    color: var(--tg-text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--tg-transition), color var(--tg-transition);
+}
+
+.modal-close:hover {
+    background-color: var(--tg-bg-input);
+    color: var(--tg-text-primary);
+}
+
+.modal-body {
+    padding: var(--tg-spacing-lg);
+}
+
+.modal-footer {
+    padding: var(--tg-spacing-lg);
+    border-top: 1px solid var(--tg-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--tg-spacing-sm);
+}
+
+/* ============================================
+   TABS
+   ============================================ */
+
+.tabs {
+    display: flex;
+    border-bottom: 1px solid var(--tg-border);
+    background-color: var(--tg-bg-primary);
+    flex-shrink: 0;
+}
+
+.tab {
+    flex: 1;
+    padding: var(--tg-spacing-md);
+    text-align: center;
+    font-size: var(--tg-font-size-base);
+    font-weight: 500;
+    color: var(--tg-text-secondary);
+    cursor: pointer;
+    position: relative;
+    transition: color var(--tg-transition);
+    background: none;
+    border: none;
+}
+
+.tab:hover {
+    color: var(--tg-text-primary);
+}
+
+.tab.active {
+    color: var(--tg-primary-light);
+}
+
+.tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 20%;
+    right: 20%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--tg-primary), var(--tg-primary-light));
+    border-radius: 1px 1px 0 0;
+}
+
+/* ============================================
+   STATUS INDICATORS
+   ============================================ */
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: var(--tg-radius-xl);
+    font-size: var(--tg-font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.status-active {
+    background-color: rgba(79, 174, 78, 0.15);
+    color: var(--tg-success);
+    border: 1px solid rgba(79, 174, 78, 0.3);
+}
+
+.status-pending {
+    background-color: rgba(245, 166, 35, 0.15);
+    color: var(--tg-warning);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+}
+
+.status-completed {
+    background-color: rgba(43, 82, 120, 0.15);
+    color: var(--tg-primary-light);
+    border: 1px solid rgba(43, 82, 120, 0.3);
+}
+
+.status-cancelled {
+    background-color: rgba(223, 63, 64, 0.15);
+    color: var(--tg-error);
+    border: 1px solid rgba(223, 63, 64, 0.3);
+}
+
+/* Online indicator */
+.online-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--tg-radius-round);
+    background-color: var(--tg-online);
+    border: 2px solid var(--tg-bg-primary);
+    position: absolute;
+    bottom: 0;
+    right: 0;
+}
+
+/* ============================================
+   WELCOME SCREEN
+   ============================================ */
+
+.welcome-screen {
+    background-color: var(--tg-bg-secondary);
+    text-align: center;
+    padding: var(--tg-spacing-xl);
+}
+
+.welcome-screen h2 {
+    font-size: var(--tg-font-size-xl);
+    font-weight: 600;
+    color: var(--tg-text-secondary);
+    margin-top: var(--tg-spacing-lg);
+}
+
+.welcome-screen p {
+    font-size: var(--tg-font-size-base);
+    color: var(--tg-text-muted);
+    margin-top: var(--tg-spacing-sm);
+}
+
+/* ============================================
+   TOAST NOTIFICATIONS
+   ============================================ */
+
+#toast-container {
+    position: fixed;
+    top: var(--tg-spacing-lg);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tg-spacing-sm);
+    pointer-events: none;
+}
+
+.toast {
+    background-color: var(--tg-bg-tertiary);
+    color: var(--tg-text-primary);
+    padding: var(--tg-spacing-md) var(--tg-spacing-lg);
+    border-radius: var(--tg-radius-lg);
+    font-size: var(--tg-font-size-sm);
+    box-shadow: var(--tg-shadow-large);
+    border: 1px solid var(--tg-border);
+    max-width: 320px;
+    text-align: center;
+    pointer-events: all;
+    animation: toastIn 0.3s ease;
+}
+
+.toast-error { border-left: 3px solid var(--tg-error); }
+.toast-success { border-left: 3px solid var(--tg-success); }
+.toast-info { border-left: 3px solid var(--tg-primary-light); }
+
+.toast.fade-out {
+    animation: toastOut 0.3s ease forwards;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.text-primary { color: var(--tg-text-primary); }
+.text-secondary { color: var(--tg-text-secondary); }
+.text-muted { color: var(--tg-text-muted); }
+.text-link { color: var(--tg-text-link); }
+.text-success { color: var(--tg-success); }
+.text-error { color: var(--tg-error); }
+.text-sm { font-size: var(--tg-font-size-sm); }
+.text-center { text-align: center; }
+
+.bg-primary { background-color: var(--tg-bg-primary); }
+.bg-secondary { background-color: var(--tg-bg-secondary); }
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-sm { gap: var(--tg-spacing-sm); }
+.gap-md { gap: var(--tg-spacing-md); }
+.gap-lg { gap: var(--tg-spacing-lg); }
+.flex-1 { flex: 1; }
+
+.p-sm { padding: var(--tg-spacing-sm); }
+.p-md { padding: var(--tg-spacing-md); }
+.p-lg { padding: var(--tg-spacing-lg); }
+.p-xl { padding: var(--tg-spacing-xl); }
+
+.m-auto { margin: auto; }
+.mt-sm { margin-top: var(--tg-spacing-sm); }
+.mt-md { margin-top: var(--tg-spacing-md); }
+.mt-lg { margin-top: var(--tg-spacing-lg); }
+.mb-sm { margin-bottom: var(--tg-spacing-sm); }
+.mb-md { margin-bottom: var(--tg-spacing-md); }
+.mb-lg { margin-bottom: var(--tg-spacing-lg); }
+
+.rounded { border-radius: var(--tg-radius-md); }
+.rounded-lg { border-radius: var(--tg-radius-lg); }
+.rounded-full { border-radius: var(--tg-radius-round); }
+
+.shadow { box-shadow: var(--tg-shadow); }
+.shadow-md { box-shadow: var(--tg-shadow-medium); }
+.shadow-lg { box-shadow: var(--tg-shadow-large); }
+
+.truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hidden { display: none !important; }
+.visible { visibility: visible; }
+.invisible { visibility: hidden; }
+
+/* ============================================
+   RESPONSIVE DESIGN
+   ============================================ */
+
+@media (min-width: 601px) {
+    .app-wrapper {
+        align-items: center;
+    }
+
+    .app-container {
+        border-radius: var(--tg-radius-xl);
+        height: min(100vh, 840px);
+        box-shadow: 0 0 80px rgba(0, 0, 0, 0.9);
+    }
+
+    .modal-overlay {
+        align-items: center;
+    }
+
+    .modal {
+        border-radius: var(--tg-radius-xl);
+        max-height: 80vh;
+        transform: scale(0.9);
+        border-bottom: 1px solid var(--tg-border);
+    }
+
+    .modal-overlay.active .modal {
+        transform: scale(1);
+    }
+
+    .modal-handle {
+        display: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .app-container {
+        height: 100vh;
+        border-radius: 0;
+    }
+
+    .message {
+        max-width: 85%;
+    }
+
+    .procurement-card {
+        min-width: 160px;
+        max-width: 160px;
+    }
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInRight {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes messageIn {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(-12px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(-12px) scale(0.95); }
+}
+
+.animate-fadeIn { animation: fadeIn 0.3s ease; }
+.animate-slideIn { animation: slideIn 0.3s ease; }
+.animate-pulse { animation: pulse 1.5s infinite; }
+
+/* Typing indicator */
+.typing-indicator {
+    display: flex;
+    gap: 4px;
+    padding: var(--tg-spacing-sm);
+    align-items: center;
+}
+
+.typing-indicator span {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--tg-radius-round);
+    background-color: var(--tg-text-muted);
+    animation: pulse 1.4s infinite;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    </style>
+</head>
+<body>
+
+    <!-- ==========================================
+         AUTH PAGE
+    ========================================== -->
+    <div id="auth-page" class="auth-wrapper hidden">
+        <div class="auth-container">
+            <!-- Logo -->
+            <div class="auth-logo">
+                <div class="auth-logo-icon">
+                    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+                <h1 class="auth-logo-title">GroupBuy</h1>
+                <p class="auth-logo-subtitle">Совместные закупки</p>
+            </div>
+
+            <!-- Auth Card -->
+            <div class="auth-card">
+                <!-- Step 1: Phone number -->
+                <div class="auth-step active" id="auth-step-phone">
+                    <h2 class="auth-card-title">Вход</h2>
+                    <p class="auth-card-subtitle">Введите ваш номер телефона для входа или регистрации</p>
+
+                    <div class="auth-form-group">
+                        <label class="auth-label" for="phone-input">Номер телефона</label>
+                        <div class="auth-input-wrapper">
+                            <svg class="auth-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.5 19.79 19.79 0 0 1 1.61 5c-.11-1.17.6-2.2 1.77-2.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 10.09a16 16 0 0 0 6 6l.72-.72a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.28 17l-.36-.08z"></path>
+                            </svg>
+                            <input
+                                type="tel"
+                                class="auth-input with-icon"
+                                id="phone-input"
+                                name="phone"
+                                placeholder="+7 999 123 4567"
+                                autocomplete="tel"
+                            >
+                        </div>
+                    </div>
+
+                    <button class="auth-btn" id="send-code-btn" onclick="AuthFlow.sendCode()">
+                        Получить код
+                    </button>
+                </div>
+
+                <!-- Step 2: Verification code -->
+                <div class="auth-step" id="auth-step-code">
+                    <button class="auth-back-link" onclick="AuthFlow.goBack()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        Изменить номер
+                    </button>
+
+                    <h2 class="auth-card-title">Код подтверждения</h2>
+                    <p class="auth-card-subtitle" id="code-hint">Мы отправили код на номер <span id="phone-display"></span></p>
+
+                    <div class="auth-code-inputs" id="code-inputs">
+                        <input type="text" class="auth-code-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code">
+                        <input type="text" class="auth-code-digit" maxlength="1" inputmode="numeric" pattern="[0-9]">
+                        <input type="text" class="auth-code-digit" maxlength="1" inputmode="numeric" pattern="[0-9]">
+                        <input type="text" class="auth-code-digit" maxlength="1" inputmode="numeric" pattern="[0-9]">
+                        <input type="text" class="auth-code-digit" maxlength="1" inputmode="numeric" pattern="[0-9]">
+                    </div>
+
+                    <button class="auth-btn" id="verify-btn" onclick="AuthFlow.verifyCode()">
+                        Войти
+                    </button>
+
+                    <div class="auth-resend">
+                        Не получили код?
+                        <span class="auth-resend-link" id="resend-link" onclick="AuthFlow.resendCode()">Отправить повторно</span>
+                        <span id="resend-timer" class="hidden"> через <span id="timer-count">60</span>с</span>
+                    </div>
+                </div>
+
+                <!-- Step 3: Registration (for new users) -->
+                <div class="auth-step" id="auth-step-register">
+                    <button class="auth-back-link" onclick="AuthFlow.goBack()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        Назад
+                    </button>
+
+                    <h2 class="auth-card-title">Регистрация</h2>
+                    <p class="auth-card-subtitle">Заполните данные для создания аккаунта</p>
+
+                    <form id="register-form">
+                        <div class="auth-form-group">
+                            <label class="auth-label" for="reg-first-name">Имя *</label>
+                            <input type="text" class="auth-input" id="reg-first-name" name="first_name" required placeholder="Введите имя">
+                        </div>
+                        <div class="auth-form-group">
+                            <label class="auth-label" for="reg-last-name">Фамилия</label>
+                            <input type="text" class="auth-input" id="reg-last-name" name="last_name" placeholder="Введите фамилию">
+                        </div>
+                        <div class="auth-form-group">
+                            <label class="auth-label" for="reg-email">Email</label>
+                            <input type="email" class="auth-input" id="reg-email" name="email" placeholder="email@example.com">
+                        </div>
+                        <div class="auth-form-group">
+                            <label class="auth-label" for="reg-role">Роль *</label>
+                            <select class="auth-input form-select" id="reg-role" name="role" required>
+                                <option value="buyer">Покупатель</option>
+                                <option value="organizer">Организатор</option>
+                                <option value="supplier">Поставщик</option>
+                            </select>
+                        </div>
+                    </form>
+
+                    <button class="auth-btn" onclick="App.register(Object.fromEntries(new FormData(document.getElementById('register-form'))))">
+                        Зарегистрироваться
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         MAIN APP PAGE
+    ========================================== -->
+    <div id="main-page" class="app-wrapper hidden">
+        <div class="app-container">
+
+            <!-- ======= TOP HORIZONTAL SLIDER ======= -->
+            <section class="top-slider-section" id="top-slider">
+                <div class="slider-viewport" id="slider-viewport">
+                    <div class="slider-track" id="slider-track">
+
+                        <!-- Slide 1: Welcome greeting -->
+                        <div class="slider-slide">
+                            <div class="slider-slide-inner">
+                                <div class="slider-slide-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                    </svg>
+                                </div>
+                                <div class="slider-slide-text">
+                                    <div class="slider-slide-title">Добро пожаловать!</div>
+                                    <div class="slider-slide-desc">Участвуйте в совместных закупках и экономьте вместе</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Slide 2: Quick actions -->
+                        <div class="slider-slide">
+                            <div class="slider-actions" id="quick-actions">
+                                <button class="slider-action-btn" onclick="UI.switchTab('cabinet')">
+                                    <svg class="slider-action-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="12" cy="7" r="4"></circle>
+                                    </svg>
+                                    <span class="slider-action-label">Профиль</span>
+                                </button>
+                                <button class="slider-action-btn" onclick="UI.openCreateProcurementModal()">
+                                    <svg class="slider-action-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                                    </svg>
+                                    <span class="slider-action-label">Закупка</span>
+                                </button>
+                                <button class="slider-action-btn" onclick="UI.switchTab('chats')">
+                                    <svg class="slider-action-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                    <span class="slider-action-label">Чаты</span>
+                                </button>
+                                <button class="slider-action-btn" onclick="App.logout()">
+                                    <svg class="slider-action-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                        <polyline points="16 17 21 12 16 7"></polyline>
+                                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                                    </svg>
+                                    <span class="slider-action-label">Выход</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Slide 3: Tip / system message -->
+                        <div class="slider-slide">
+                            <div class="slider-slide-inner">
+                                <div class="slider-slide-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                </div>
+                                <div class="slider-slide-text">
+                                    <div class="slider-slide-title">Совет дня</div>
+                                    <div class="slider-slide-desc">Объединяйтесь с другими покупателями для лучших условий</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Slide 4: News / updates -->
+                        <div class="slider-slide">
+                            <div class="slider-slide-inner">
+                                <div class="slider-slide-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                        <polyline points="22,6 12,13 2,6"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="slider-slide-text">
+                                    <div class="slider-slide-title">Новые закупки</div>
+                                    <div class="slider-slide-desc">Проверяйте раздел чатов для актуальных закупок</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Slider dots -->
+                <div class="slider-dots" id="slider-dots">
+                    <button class="slider-dot active" data-index="0" aria-label="Слайд 1"></button>
+                    <button class="slider-dot" data-index="1" aria-label="Слайд 2"></button>
+                    <button class="slider-dot" data-index="2" aria-label="Слайд 3"></button>
+                    <button class="slider-dot" data-index="3" aria-label="Слайд 4"></button>
+                </div>
+            </section>
+
+            <!-- ======= HEADER ======= -->
+            <header class="header">
+                <button class="btn btn-icon menu-toggle" aria-label="Menu">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <h1 class="header-title" style="flex:1;">GroupBuy</h1>
+                <button class="btn btn-icon theme-toggle" aria-label="Toggle theme" title="Переключить тему">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- ======= TABS ======= -->
+            <div class="tabs">
+                <button class="tab active" data-tab="chats">Чаты</button>
+                <button class="tab" data-tab="cabinet">Кабинет</button>
+            </div>
+
+            <!-- ======= MAIN BODY (chat list + content) ======= -->
+            <div class="main-body" style="flex:1; overflow:hidden; position:relative;">
+
+                <!-- Sidebar with chat list -->
+                <aside class="sidebar" id="chat-list-tab">
+                    <div class="search-bar">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input type="text" class="search-input" placeholder="Поиск закупок...">
+                    </div>
+
+                    <!-- Procurement Horizontal Cards -->
+                    <div class="procurement-slider">
+                        <div class="slider-title">Активные закупки</div>
+                        <div class="slider-container" id="procurement-cards">
+                            <div class="p-md text-muted animate-pulse">Загрузка...</div>
+                        </div>
+                    </div>
+
+                    <!-- Chat List -->
+                    <div class="chat-list" id="chat-list">
+                        <div class="p-lg text-center text-muted">
+                            <p>Загрузка чатов...</p>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Personal Cabinet (hidden by default) -->
+                <div class="cabinet hidden" id="cabinet-tab">
+                    <!-- Cabinet content rendered by JS -->
+                </div>
+
+                <!-- Chat View (slides in from right on mobile) -->
+                <div class="main-content" id="chat-view">
+                    <!-- Chat Header -->
+                    <header class="header" id="chat-header">
+                        <button class="btn btn-icon mobile-back" onclick="UI.closeMobileChat()">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="15 18 9 12 15 6"></polyline>
+                            </svg>
+                        </button>
+                        <div class="chat-avatar" id="chat-avatar" style="width:36px;height:36px;font-size:14px;"></div>
+                        <div style="flex:1;min-width:0;">
+                            <h2 class="header-title" id="chat-title">Выберите чат</h2>
+                            <p class="header-subtitle" id="chat-subtitle"></p>
+                        </div>
+                        <button class="btn btn-icon" onclick="UI.openProcurementDetails(AppState.currentChat)">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"></circle>
+                                <circle cx="12" cy="5" r="1"></circle>
+                                <circle cx="12" cy="19" r="1"></circle>
+                            </svg>
+                        </button>
+                    </header>
+
+                    <!-- Welcome Screen -->
+                    <div class="welcome-screen flex flex-col items-center justify-center" id="welcome-screen" style="flex:1;">
+                        <svg width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" style="color:var(--tg-text-muted);opacity:0.5;">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <h2 class="mt-lg">Добро пожаловать</h2>
+                        <p class="mt-sm">Выберите закупку для общения</p>
+                    </div>
+
+                    <!-- Message Area -->
+                    <div class="message-area hidden" id="message-area"></div>
+
+                    <!-- Message Input -->
+                    <div class="message-input-area hidden" id="message-input-area">
+                        <button class="btn btn-icon" aria-label="Attach file">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                            </svg>
+                        </button>
+                        <div class="message-input-container">
+                            <textarea class="message-input" placeholder="Сообщение..." rows="1"></textarea>
+                        </div>
+                        <button class="send-button" aria-label="Send message">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+            </div><!-- end .main-body -->
+        </div><!-- end .app-container -->
+    </div><!-- end #main-page -->
+
+
+    <!-- ==========================================
+         MODALS
+    ========================================== -->
+
+    <!-- Procurement Details Modal -->
+    <div class="modal-overlay" id="procurement-modal-overlay">
+        <div class="modal" id="procurement-modal">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <h3 class="modal-title">Закупка</h3>
+                <button class="modal-close" onclick="UI.closeModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-round" onclick="UI.closeModal()">Закрыть</button>
+                <button class="btn btn-primary btn-round" onclick="UI.joinProcurement()">Участвовать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Procurement Modal -->
+    <div class="modal-overlay" id="create-procurement-modal-overlay">
+        <div class="modal" id="create-procurement-modal">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <h3 class="modal-title">Создать закупку</h3>
+                <button class="modal-close" onclick="UI.closeModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="create-procurement-form">
+                    <div class="form-group">
+                        <label class="form-label">Название товара *</label>
+                        <input type="text" class="form-input" name="title" required placeholder="Например: Мед натуральный">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Описание *</label>
+                        <textarea class="form-input form-textarea" name="description" required placeholder="Подробное описание закупки..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Категория</label>
+                        <select class="form-input form-select" name="category" id="category-select">
+                            <option value="">Выберите категорию</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Город получения *</label>
+                        <input type="text" class="form-input" name="city" required placeholder="Москва">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Целевая сумма (руб.) *</label>
+                        <input type="number" class="form-input" name="target_amount" required min="1000" placeholder="10000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Единица измерения</label>
+                        <input type="text" class="form-input" name="unit" placeholder="кг, шт, л">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Дедлайн *</label>
+                        <input type="datetime-local" class="form-input" name="deadline" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-round" onclick="UI.closeModal()">Отмена</button>
+                <button class="btn btn-primary btn-round" onclick="UI.createProcurement()">Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deposit Modal -->
+    <div class="modal-overlay" id="deposit-modal-overlay">
+        <div class="modal" id="deposit-modal">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <h3 class="modal-title">Пополнение баланса</h3>
+                <button class="modal-close" onclick="UI.closeModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="deposit-form">
+                    <div class="form-group">
+                        <label class="form-label">Сумма (руб.) *</label>
+                        <input type="number" class="form-input" name="amount" required min="100" placeholder="1000">
+                    </div>
+                    <p class="text-secondary text-sm mt-md">Минимальная сумма пополнения: 100 руб.</p>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-round" onclick="UI.closeModal()">Отмена</button>
+                <button class="btn btn-primary btn-round" onclick="UI.processDeposit()">Пополнить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js"></script>
+
+    <script>
+        // ==========================================
+        // AUTH FLOW — does NOT touch any existing auth logic
+        // ==========================================
+        const AuthFlow = {
+            currentStep: 'phone',
+            phone: '',
+
+            sendCode() {
+                const input = document.getElementById('phone-input');
+                const phone = input.value.trim();
+                if (!phone) {
+                    input.focus();
+                    return;
+                }
+                this.phone = phone;
+                document.getElementById('phone-display').textContent = phone;
+                this.goToStep('code');
+                this.startResendTimer();
+            },
+
+            verifyCode() {
+                const digits = document.querySelectorAll('.auth-code-digit');
+                const code = Array.from(digits).map(d => d.value).join('');
+                if (code.length < 5) {
+                    digits[code.length] && digits[code.length].focus();
+                    return;
+                }
+                // Delegate to existing App auth logic
+                if (typeof App !== 'undefined' && App.verifyCode) {
+                    App.verifyCode(this.phone, code);
+                } else {
+                    // Fallback: show register step for new users
+                    this.goToStep('register');
+                }
+            },
+
+            resendCode() {
+                this.startResendTimer();
+                document.querySelectorAll('.auth-code-digit').forEach(d => d.value = '');
+                document.querySelector('.auth-code-digit').focus();
+            },
+
+            goBack() {
+                const steps = { code: 'phone', register: 'code' };
+                this.goToStep(steps[this.currentStep] || 'phone');
+            },
+
+            goToStep(step) {
+                document.querySelectorAll('.auth-step').forEach(s => s.classList.remove('active'));
+                document.getElementById('auth-step-' + step).classList.add('active');
+                this.currentStep = step;
+            },
+
+            startResendTimer() {
+                let count = 60;
+                const link = document.getElementById('resend-link');
+                const timer = document.getElementById('resend-timer');
+                const counter = document.getElementById('timer-count');
+
+                link.classList.add('hidden');
+                timer.classList.remove('hidden');
+
+                const interval = setInterval(() => {
+                    count--;
+                    counter.textContent = count;
+                    if (count <= 0) {
+                        clearInterval(interval);
+                        link.classList.remove('hidden');
+                        timer.classList.add('hidden');
+                    }
+                }, 1000);
+            }
+        };
+
+        // ==========================================
+        // CODE DIGIT INPUT NAVIGATION
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            const codeContainer = document.getElementById('code-inputs');
+            if (codeContainer) {
+                const digits = codeContainer.querySelectorAll('.auth-code-digit');
+                digits.forEach((digit, i) => {
+                    digit.addEventListener('input', (e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        e.target.value = val.slice(-1);
+                        if (val && i < digits.length - 1) {
+                            digits[i + 1].focus();
+                        }
+                        if (Array.from(digits).every(d => d.value)) {
+                            AuthFlow.verifyCode();
+                        }
+                    });
+
+                    digit.addEventListener('keydown', (e) => {
+                        if (e.key === 'Backspace' && !digit.value && i > 0) {
+                            digits[i - 1].focus();
+                        }
+                        if (e.key === 'ArrowLeft' && i > 0) digits[i-1].focus();
+                        if (e.key === 'ArrowRight' && i < digits.length-1) digits[i+1].focus();
+                    });
+
+                    digit.addEventListener('paste', (e) => {
+                        e.preventDefault();
+                        const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+                        digits.forEach((d, idx) => { d.value = text[idx] || ''; });
+                        if (text.length >= digits.length) AuthFlow.verifyCode();
+                        else digits[Math.min(text.length, digits.length-1)].focus();
+                    });
+                });
+            }
+
+            // ==========================================
+            // TOP SLIDER
+            // ==========================================
+            const track = document.getElementById('slider-track');
+            const dots = document.querySelectorAll('.slider-dot');
+            let currentSlide = 0;
+            let autoplayTimer = null;
+            let isDragging = false;
+            let startX = 0;
+            let dragDelta = 0;
+
+            function getSlideCount() {
+                return track ? track.children.length : 0;
+            }
+
+            function goToSlide(index) {
+                const count = getSlideCount();
+                currentSlide = (index + count) % count;
+                if (track) {
+                    track.style.transform = `translateX(-${currentSlide * 100}%)`;
+                }
+                dots.forEach((dot, i) => {
+                    dot.classList.toggle('active', i === currentSlide);
+                });
+            }
+
+            function startAutoplay() {
+                stopAutoplay();
+                autoplayTimer = setInterval(() => goToSlide(currentSlide + 1), 5000);
+            }
+
+            function stopAutoplay() {
+                if (autoplayTimer) { clearInterval(autoplayTimer); autoplayTimer = null; }
+            }
+
+            // Dot navigation
+            dots.forEach(dot => {
+                dot.addEventListener('click', () => {
+                    goToSlide(parseInt(dot.dataset.index));
+                    stopAutoplay();
+                    startAutoplay();
+                });
+            });
+
+            // Touch/drag support
+            const viewport = document.getElementById('slider-viewport');
+            if (viewport) {
+                viewport.addEventListener('touchstart', (e) => {
+                    startX = e.touches[0].clientX;
+                    isDragging = true;
+                    stopAutoplay();
+                }, { passive: true });
+
+                viewport.addEventListener('touchmove', (e) => {
+                    if (!isDragging) return;
+                    dragDelta = e.touches[0].clientX - startX;
+                }, { passive: true });
+
+                viewport.addEventListener('touchend', () => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    if (Math.abs(dragDelta) > 40) {
+                        goToSlide(dragDelta < 0 ? currentSlide + 1 : currentSlide - 1);
+                    }
+                    dragDelta = 0;
+                    startAutoplay();
+                });
+
+                // Mouse drag
+                viewport.addEventListener('mousedown', (e) => {
+                    startX = e.clientX;
+                    isDragging = true;
+                    stopAutoplay();
+                });
+
+                viewport.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    dragDelta = e.clientX - startX;
+                });
+
+                viewport.addEventListener('mouseup', () => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    if (Math.abs(dragDelta) > 40) {
+                        goToSlide(dragDelta < 0 ? currentSlide + 1 : currentSlide - 1);
+                    }
+                    dragDelta = 0;
+                    startAutoplay();
+                });
+
+                viewport.addEventListener('mouseleave', () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        dragDelta = 0;
+                        startAutoplay();
+                    }
+                });
+            }
+
+            startAutoplay();
+
+            // ==========================================
+            // TAB SWITCHING
+            // ==========================================
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    UI.switchTab(tab.dataset.tab);
+                });
+            });
+        });
+
+        // Extend UI with switchTab and closeMobileChat
+        document.addEventListener('DOMContentLoaded', () => {
+            // Extend UI after app.js loads
+            setTimeout(() => {
+                if (typeof UI !== 'undefined') {
+                    UI.switchTab = function(tabName) {
+                        document.querySelectorAll('.tab').forEach(t => {
+                            t.classList.toggle('active', t.dataset.tab === tabName);
+                        });
+                        const chatTab = document.getElementById('chat-list-tab');
+                        const cabinetTab = document.getElementById('cabinet-tab');
+                        if (tabName === 'chats') {
+                            chatTab && chatTab.classList.remove('hidden');
+                            cabinetTab && cabinetTab.classList.add('hidden');
+                        } else {
+                            chatTab && chatTab.classList.add('hidden');
+                            cabinetTab && cabinetTab.classList.remove('hidden');
+                        }
+                    };
+
+                    UI.closeMobileChat = function() {
+                        const chatView = document.getElementById('chat-view');
+                        if (chatView) chatView.classList.remove('open');
+                    };
+
+                    // Override renderChatList to use #chat-list
+                    const origRenderChatList = UI.renderChatList.bind(UI);
+                    UI.renderChatList = function(procurements) {
+                        const container = document.querySelector('#chat-list');
+                        if (!container) return origRenderChatList(procurements);
+                        // Use original but with updated selector
+                        container.innerHTML = procurements.map(p => `
+                            <div class="chat-item ${AppState.currentChat === p.id ? 'active' : ''}" data-procurement-id="${p.id}">
+                                <div class="chat-avatar" style="background-color:${Utils.getAvatarColor(p.title)}">${Utils.getInitials(p.title)}</div>
+                                <div class="chat-info">
+                                    <div class="chat-header">
+                                        <span class="chat-title">${Utils.escapeHtml(p.title)}</span>
+                                        <span class="chat-time">${Utils.formatTime(p.updated_at)}</span>
+                                    </div>
+                                    <div class="chat-message">${p.participant_count} участников • ${p.progress}%</div>
+                                </div>
+                                ${AppState.unreadCounts[p.id] ? `<div class="chat-badge">${AppState.unreadCounts[p.id]}</div>` : ''}
+                            </div>
+                        `).join('');
+                        container.querySelectorAll('.chat-item').forEach(item => {
+                            item.addEventListener('click', () => {
+                                const id = parseInt(item.dataset.procurementId);
+                                UI.openChat(id);
+                                const chatView = document.getElementById('chat-view');
+                                if (chatView) chatView.classList.add('open');
+                            });
+                        });
+                    };
+
+                    // Override renderProcurementSlider to use #procurement-cards
+                    UI.renderProcurementSlider = function(procurements) {
+                        const container = document.getElementById('procurement-cards');
+                        if (!container) return;
+                        container.innerHTML = procurements.map(p => `
+                            <div class="procurement-card" data-procurement-id="${p.id}">
+                                <div class="procurement-title">${Utils.escapeHtml(p.title)}</div>
+                                <div class="procurement-info">${Utils.escapeHtml(p.city)}</div>
+                                <div class="procurement-progress">
+                                    <div class="procurement-progress-bar" style="width:${p.progress}%"></div>
+                                </div>
+                                <div class="procurement-stats">
+                                    <span>${Utils.formatCurrency(p.current_amount)}</span>
+                                    <span>${p.days_left}д</span>
+                                </div>
+                            </div>
+                        `).join('');
+                        container.querySelectorAll('.procurement-card').forEach(card => {
+                            card.addEventListener('click', () => {
+                                UI.openProcurementDetails(parseInt(card.dataset.procurementId));
+                            });
+                        });
+                    };
+                }
+            }, 50);
+        });
+    </script>
+
+<script>
+// Mock app.js dependencies so the page renders
+window.AppState = { currentChat: null, procurements: [], messages: [], unreadCounts: {}, user: null };
+window.Utils = {
+    escapeHtml: s => s,
+    getInitials: (a,b) => (a||'?')[0],
+    getAvatarColor: () => '#2b5278',
+    formatTime: () => '12:30',
+    formatCurrency: n => n + '₽',
+    showToast: () => {}
+};
+
+// Show main page
+document.getElementById('main-page').classList.remove('hidden');
+
+// Populate with mock data
+const chatList = document.getElementById('chat-list');
+if (chatList) {
+    chatList.innerHTML = ['Мед натуральный', 'Яблоки Фуджи', 'Орехи грецкие', 'Кофе зерновой'].map((t, i) => `
+        <div class="chat-item">
+            <div class="chat-avatar" style="background-color:#2b5278">${t[0]}</div>
+            <div class="chat-info">
+                <div class="chat-header">
+                    <span class="chat-title">${t}</span>
+                    <span class="chat-time">12:${30+i}</span>
+                </div>
+                <div class="chat-message">42 участника • ${30+i*10}%</div>
+            </div>
+            ${i===1?'<div class="chat-badge">3</div>':''}
+        </div>
+    `).join('');
+}
+
+const cards = document.getElementById('procurement-cards');
+if (cards) {
+    cards.innerHTML = ['Мед', 'Яблоки', 'Орехи', 'Кофе'].map((t, i) => `
+        <div class="procurement-card">
+            <div class="procurement-title">${t}</div>
+            <div class="procurement-info">Москва</div>
+            <div class="procurement-progress"><div class="procurement-progress-bar" style="width:${40+i*15}%"></div></div>
+            <div class="procurement-stats"><span>8500₽</span><span>5д</span></div>
+        </div>
+    `).join('');
+}
+
+// Run slider script inline
+const track = document.getElementById('slider-track');
+const dots = document.querySelectorAll('.slider-dot');
+let cur = 0;
+function goTo(i) {
+    cur = (i + 4) % 4;
+    track.style.transform = `translateX(-${cur*100}%)`;
+    dots.forEach((d, idx) => d.classList.toggle('active', idx === cur));
+}
+dots.forEach(d => d.addEventListener('click', () => goTo(+d.dataset.index)));
+setInterval(() => goTo(cur+1), 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+---
+# Argo Rollouts configuration for canary deployment with auto-rollback
+# Requires: kubectl apply -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: purchase-service
+  labels:
+    app: purchase-service
+spec:
+  replicas: 15
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: purchase-service
+  template:
+    metadata:
+      labels:
+        app: purchase-service
+    spec:
+      containers:
+        - name: purchase-service
+          image: groupbuy/purchase-service:latest
+          ports:
+            - containerPort: 4002
+          env:
+            - name: PORT
+              value: "4002"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: purchase-db-secret
+                  key: url
+            - name: KAFKA_BROKERS
+              value: "kafka-0.kafka:9092,kafka-1.kafka:9092,kafka-2.kafka:9092"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /purchases/health
+              port: 4002
+            initialDelaySeconds: 15
+            periodSeconds: 5
+  strategy:
+    canary:
+      # Start with 5% of traffic to canary
+      steps:
+        - setWeight: 5
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: error-rate-check
+            args:
+              - name: service-name
+                value: purchase-service
+        - setWeight: 25
+        - pause: { duration: 2m }
+        - setWeight: 50
+        - pause: { duration: 2m }
+        - setWeight: 75
+        - pause: { duration: 1m }
+      # Auto-rollback on failure
+      abortScaleDownDelaySeconds: 30
+      canaryService: purchase-service-canary
+      stableService: purchase-service-stable
+      trafficRouting:
+        nginx:
+          stableIngress: purchase-service-ingress
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: error-rate-check
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: error-rate
+      interval: 30s
+      count: 4
+      successCondition: result[0] < 0.005
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            (
+              sum(rate(http_requests_total{job="{{ args.service-name }}", status=~"5.."}[2m]))
+              /
+              sum(rate(http_requests_total{job="{{ args.service-name }}"}[2m]))
+            )
+    - name: latency-p95
+      interval: 30s
+      count: 4
+      successCondition: result[0] < 0.5
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="{{ args.service-name }}"}[2m])) by (le)
+            )
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+spec:
+  replicas: 10
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: groupbuy/payment-service:latest
+          ports:
+            - containerPort: 4003
+          env:
+            - name: PORT
+              value: "4003"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db-secret
+                  key: url
+            - name: KAFKA_BROKERS
+              value: "kafka-0.kafka:9092,kafka-1.kafka:9092,kafka-2.kafka:9092"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4003
+            initialDelaySeconds: 10
+            periodSeconds: 5
+  strategy:
+    canary:
+      steps:
+        - setWeight: 5
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: error-rate-check
+            args:
+              - name: service-name
+                value: payment-service
+        - setWeight: 25
+        - pause: { duration: 2m }
+        - setWeight: 50
+        - pause: { duration: 2m }
+        - setWeight: 75
+        - pause: { duration: 1m }
+      abortScaleDownDelaySeconds: 30
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: gateway
+  labels:
+    app: gateway
+spec:
+  replicas: 10
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: groupbuy/gateway:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  strategy:
+    canary:
+      steps:
+        - setWeight: 5
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: error-rate-check
+            args:
+              - name: service-name
+                value: gateway
+        - setWeight: 25
+        - pause: { duration: 2m }
+        - setWeight: 50
+        - pause: { duration: 1m }
+      abortScaleDownDelaySeconds: 30

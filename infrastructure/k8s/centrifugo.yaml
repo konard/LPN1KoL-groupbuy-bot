@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: centrifugo
+  namespace: groupbuy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: centrifugo
+  template:
+    metadata:
+      labels:
+        app: centrifugo
+    spec:
+      containers:
+        - name: centrifugo
+          image: centrifugo/centrifugo:v5
+          args: ["-c", "/centrifugo/config.json"]
+          ports:
+            - containerPort: 8000
+              name: ws
+          volumeMounts:
+            - name: config
+              mountPath: /centrifugo
+          env:
+            - name: CENTRIFUGO_TOKEN_HMAC_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: centrifugo-secret
+                  key: token-secret
+            - name: CENTRIFUGO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: centrifugo-secret
+                  key: api-key
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: centrifugo-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: centrifugo-config
+  namespace: groupbuy
+data:
+  config.json: |
+    {
+      "port": 8000,
+      "engine": "redis",
+      "redis": {
+        "address": "redis:6379",
+        "db": 1
+      },
+      "presence": true,
+      "history_size": 100,
+      "history_ttl": "24h",
+      "join_leave": true,
+      "prometheus": true,
+      "health": true
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: centrifugo
+  namespace: groupbuy
+spec:
+  selector:
+    app: centrifugo
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: ws
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: centrifugo-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  token-secret: centrifugo_jwt_secret_change_in_production
+  api-key: centrifugo_api_key_change_me

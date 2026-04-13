@@ -1,0 +1,15 @@
+{
+  "name": "groupbuy-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "groupbuy_wasm_bg.wasm",
+    "groupbuy_wasm.js",
+    "groupbuy_wasm.d.ts"
+  ],
+  "main": "groupbuy_wasm.js",
+  "types": "groupbuy_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Lint and type check Python code
+  python-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+          pip install -r bot/requirements.txt
+
+      - name: Run Ruff linter
+        run: ruff check bot/ adapters/
+
+      - name: Run Ruff formatter check
+        run: ruff format --check bot/ adapters/
+
+  # Build and test Rust backend
+  rust-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core-rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        working-directory: core-rust
+        run: cargo build --release
+
+      - name: Run tests
+        working-directory: core-rust
+        run: cargo test
+
+  # Build WASM utilities
+  wasm-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM
+        working-directory: wasm-utils
+        run: wasm-pack build --target web
+
+      - name: Run Rust tests
+        working-directory: wasm-utils
+        run: cargo test
+
+  # Build React frontend
+  frontend-build:
+    runs-on: ubuntu-latest
+    needs: wasm-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-react/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-react
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend-react
+        run: npm run build
+
+  # Docker build test
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build core-rust image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./core-rust
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./bot
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build websocket-server image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./infrastructure/websocket
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build mattermost-adapter image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./adapters/mattermost
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Validate docker-compose configuration
+  docker-compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate docker-compose.prod.yml
+        run: docker compose -f docker-compose.prod.yml config --quiet
+
+      - name: Validate docker-compose.two-server.yml
+        run: docker compose -f docker-compose.two-server.yml config --quiet
+
+      - name: Validate docker-compose.microservices.yml
+        run: docker compose -f docker-compose.microservices.yml config --quiet
+
+      - name: Validate docker-compose.light.yml
+        run: docker compose -f docker-compose.light.yml config --quiet
+
+      - name: Validate docker-compose.unified.yml
+        run: docker compose -f docker-compose.unified.yml config --quiet
+
+  # Build microservices Docker images
+  microservices-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway
+          - auth-service
+          - purchase-service
+          - payment-service
+          - chat-service
+          - notification-service
+          - analytics-service
+          - search-service
+          - reputation-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/${{ matrix.service }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }},ignore-error=true

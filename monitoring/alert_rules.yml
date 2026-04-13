@@ -1,0 +1,241 @@
+groups:
+  # ─── Service Health ──────────────────────────────────────────────────────────
+  - name: service_health
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{status=~"5.."}[5m])
+            /
+            rate(http_requests_total[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ $labels.job }}"
+          description: "p95 latency is {{ $value }}s for {{ $labels.job }}"
+
+  # ─── Resource Alerts ─────────────────────────────────────────────────────────
+  - name: resource_alerts
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          (process_resident_memory_bytes / 1024 / 1024) > 800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.job }}"
+          description: "Memory usage is {{ $value }}MB"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL connection pool near exhaustion"
+          description: "{{ $value | humanizePercentage }} of connections used"
+
+  # ─── Kafka Alerts ────────────────────────────────────────────────────────────
+  - name: kafka_alerts
+    rules:
+      - alert: KafkaConsumerLag
+        expr: |
+          kafka_consumer_group_lag > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Consumer group {{ $labels.consumergroup }} lag is {{ $value }} on topic {{ $labels.topic }}"
+
+      - alert: KafkaProducerErrors
+        expr: |
+          rate(kafka_producer_record_error_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka producer errors detected"
+          description: "Producer errors on {{ $labels.job }}: {{ $value }}/s"
+
+  # ─── Business Alerts ─────────────────────────────────────────────────────────
+  - name: business_alerts
+    rules:
+      - alert: PaymentHoldFailureRate
+        expr: |
+          (
+            rate(payment_hold_failures_total[5m])
+            /
+            rate(payment_hold_attempts_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Payment hold failure rate is high"
+          description: "{{ $value | humanizePercentage }} of hold attempts are failing"
+
+      - alert: VotingSessionAutoCloseBacklog
+        expr: |
+          voting_sessions_expired_open > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Voting sessions not being auto-closed"
+          description: "{{ $value }} expired sessions still open"
+
+  # ─── Redis Alerts ────────────────────────────────────────────────────────────
+  - name: redis_alerts
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} is not responding"
+
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "{{ $value | humanizePercentage }} of max memory used"
+
+  # ─── Escrow & Commission Alerts ────────────────────────────────────────────────
+  - name: escrow_commission_alerts
+    rules:
+      - alert: EscrowDisputeRate
+        expr: |
+          (
+            rate(escrow_disputes_total[1h])
+            /
+            rate(escrow_created_total[1h])
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Escrow dispute rate is high"
+          description: "{{ $value | humanizePercentage }} of escrow accounts have disputes"
+
+      - alert: EscrowHighHoldAmount
+        expr: |
+          escrow_total_held_amount > 10000000
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Large total escrow amount"
+          description: "Total held in escrow: {{ $value }}"
+
+      - alert: CommissionCalculationErrors
+        expr: |
+          rate(commission_calculation_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Commission calculation errors detected"
+          description: "Commission service errors: {{ $value }}/s"
+
+  # ─── Search & Reputation Alerts ──────────────────────────────────────────────
+  - name: search_reputation_alerts
+    rules:
+      - alert: SearchHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(search_latency_seconds_bucket[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Search latency is high"
+          description: "p95 search latency is {{ $value }}s"
+
+      - alert: ElasticsearchClusterRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Elasticsearch cluster health is RED"
+          description: "Elasticsearch cluster is in red state"
+
+      - alert: AutoBlockTriggered
+        expr: increase(user_auto_blocked_total[1h]) > 5
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Multiple users auto-blocked"
+          description: "{{ $value }} users auto-blocked in the last hour"
+
+  # ─── Auto-Rollback Alerts ────────────────────────────────────────────────────
+  - name: rollback_alerts
+    rules:
+      - alert: AutoRollbackPerformed
+        expr: increase(auto_rollback_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "[AUTO] Rollback performed for {{ $labels.service }}"
+          description: "Auto-rollback triggered for {{ $labels.service }} {{ $labels.version }} → {{ $labels.previous_version }}"
+
+      - alert: CanaryHighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{status=~"5..", canary="true"}[2m])
+            /
+            rate(http_requests_total{canary="true"}[2m])
+          ) > 0.005
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Canary release error rate exceeds 0.5%"
+          description: "Canary for {{ $labels.job }}: {{ $value | humanizePercentage }} error rate"
+
+  # ─── Centrifugo Alerts ────────────────────────────────────────────────────────
+  - name: centrifugo_alerts
+    rules:
+      - alert: CentrifugoHighConnections
+        expr: centrifugo_node_num_clients > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Centrifugo connection count high"
+          description: "{{ $value }} concurrent WebSocket connections"

@@ -1,0 +1,169 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  # Build and push Docker images
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          # Main application images
+          - context: ./core-rust
+            image: core
+          - context: ./core
+            image: django-admin
+          - context: ./bot
+            image: bot
+          - context: ./infrastructure/websocket
+            image: websocket
+          - context: ./frontend-react
+            image: frontend
+          - context: ./adapters/telegram
+            image: telegram-adapter
+          - context: ./adapters/vk
+            image: vk-adapter
+          - context: ./adapters/mattermost
+            image: mattermost-adapter
+          # Microservice images (used by docker-compose.light.yml and docker-compose.unified.yml)
+          - context: ./services/gateway
+            image: gateway
+          - context: ./services/auth-service
+            image: auth-service
+          - context: ./services/purchase-service
+            image: purchase-service
+          - context: ./services/payment-service
+            image: payment-service
+          - context: ./services/chat-service
+            image: chat-service
+          - context: ./services/notification-service
+            image: notification-service
+          - context: ./services/analytics-service
+            image: analytics-service
+          - context: ./services/search-service
+            image: search-service
+          - context: ./services/reputation-service
+            image: reputation-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to production (on every push to main)
+  # Requires these GitHub secrets:
+  #   PRODUCTION_SSH_KEY   - SSH private key for production server
+  #   PRODUCTION_HOST      - Production server hostname or IP
+  #   PRODUCTION_USER      - SSH user on production server (default: ubuntu)
+  #   PRODUCTION_APP_DIR   - App directory on server (default: /opt/groupbuy)
+  deploy-production:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.PRODUCTION_SSH_KEY }}" ]; then
+            echo "::warning::PRODUCTION_SSH_KEY secret is not set. Skipping deployment."
+            echo "To enable automatic production deployment, add the following secrets in repository Settings → Secrets:"
+            echo "  PRODUCTION_SSH_KEY   - SSH private key for production server"
+            echo "  PRODUCTION_HOST      - Production server hostname or IP"
+            echo "  PRODUCTION_USER      - SSH user (default: ubuntu)"
+            echo "  PRODUCTION_APP_DIR   - App directory (default: /opt/groupbuy)"
+            echo "can_deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if [ -z "${{ secrets.PRODUCTION_HOST }}" ]; then
+            echo "::error::PRODUCTION_HOST secret is not set."
+            exit 1
+          fi
+          echo "can_deploy=true" >> $GITHUB_OUTPUT
+
+      - name: Deploy to production via SSH
+        if: steps.check-secrets.outputs.can_deploy == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER || 'ubuntu' }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            APP_DIR="${{ secrets.PRODUCTION_APP_DIR || '/opt/groupbuy' }}"
+            REGISTRY="ghcr.io"
+            REPO="${{ github.repository }}"
+            SHA="${{ github.sha }}"
+
+            echo "=== Deploying commit $SHA to production ==="
+            cd "$APP_DIR"
+
+            # Pull latest code
+            git fetch origin main
+            git checkout main
+            git pull origin main
+
+            # Log in to GitHub Container Registry
+            # Uses GHCR_TOKEN secret if set; otherwise images must be public.
+            if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+              echo "${{ secrets.GHCR_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+            fi
+
+            # Pull latest Docker images built by CI (do not rebuild on server)
+            docker compose -f docker-compose.prod.yml pull
+
+            # Create database backup before deployment
+            echo "Creating database backup..."
+            mkdir -p /backups/groupbuy
+            docker compose -f docker-compose.prod.yml exec -T postgres \
+              pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-groupbuy}" \
+              > "/backups/groupbuy/pre-deploy-$(date +%Y%m%d_%H%M%S).sql" 2>/dev/null || true
+
+            # Restart services (DB migrations run automatically on core startup)
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Clean up old images
+            docker image prune -f
+
+            echo "=== Production deployment complete ==="
+            docker compose -f docker-compose.prod.yml ps

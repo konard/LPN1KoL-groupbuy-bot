@@ -1,0 +1,380 @@
+version: '3.9'
+
+# Production deployment configuration (single server)
+# Before running:
+#   1. Copy .env.example to .env and fill in all variables
+#   2. Set DOMAIN=your-domain.com in .env
+#   3. Set CERTBOT_EMAIL=your@email.com in .env
+#   4. Run: bash scripts/init-letsencrypt.sh   (first-time SSL setup)
+#   5. Run: docker compose -f docker-compose.prod.yml up -d
+#
+# Lightweight + full deployment (1 GB RAM):
+#   docker compose -f docker-compose.light.yml up -d --build
+#   docker compose -f docker-compose.prod.yml up -d
+# Both files share the same groupbuy-network; run light first so the network exists.
+#
+# Two-server deployment: see docker-compose.two-server.yml
+#
+# Images are built by CI and pushed to GitHub Container Registry (ghcr.io).
+# Set IMAGE_TAG in .env to pin a specific version (default: main).
+# If registry images are unavailable, run with --build to build locally
+# from the source Dockerfiles in each service directory.
+# Example .env entries:
+#   REGISTRY=ghcr.io
+#   IMAGE_PREFIX=mixabyk1996/groupbuy-bot
+#   IMAGE_TAG=main
+
+services:
+  # Django Admin API (Python backend for /api/admin/* endpoints and admin panel)
+  # A superuser is created automatically on first start when DJANGO_SUPERUSER_PASSWORD
+  # is set in .env.  Login at https://<DOMAIN>/api/admin/ with those credentials.
+  # To create a superuser manually (or reset the password), run:
+  #   bash scripts/create-superuser.sh
+  django-admin:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
+    build:
+      context: ./core
+    container_name: groupbuy-django-admin
+    restart: on-failure:3
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
+      - DEBUG=False
+      - ALLOWED_HOSTS=${DOMAIN:-localhost},127.0.0.1,${EXTERNAL_IP:-176.12.68.195},176.12.68.195
+      # CORS: set CORS_ALLOWED_ORIGINS in .env when running without a domain.
+      # Use http://<SERVER_IP> or http://localhost:PORT as appropriate.
+      # Set CORS_ALLOWED_ORIGINS=* only for local development.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      # CSRF trusted origins must include the scheme+host used by browsers to
+      # reach the admin panel.  Without this, Django's CSRF middleware rejects
+      # POST login requests with 403, preventing admin login even with valid
+      # credentials.  Set CSRF_TRUSTED_ORIGINS in .env to override.
+      # Examples:
+      #   With domain:   CSRF_TRUSTED_ORIGINS=https://your-domain.com
+      #   With IP only:  CSRF_TRUSTED_ORIGINS=http://176.12.68.195
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost,http://${EXTERNAL_IP:-}}
+      # Auto-superuser creation: set a password to enable, leave empty to skip.
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-admin}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@localhost}
+      # Limit gunicorn workers to avoid OOM on memory-constrained hosts.
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Django startup: migrations + collectstatic + superuser creation can take 90-120s
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Core API (Rust backend)
+  # NOTE: If you see "password authentication failed for user postgres" errors,
+  # the PostgreSQL volume was likely created with a different password.
+  # Fix: docker compose -f docker-compose.prod.yml down && docker volume rm groupbuy-bot_postgres_data
+  # Or use: bash scripts/setup-prod.sh --reset-db
+  core:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/core:${IMAGE_TAG:-main}
+    build:
+      context: ./core-rust
+    container_name: groupbuy-core
+    restart: on-failure:3
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      - PORT=8000
+      - RUST_LOG=${RUST_LOG:-info,groupbuy_api=info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      # The Rust binary retries DB connection up to 10 times × 3s = 30s, then runs
+      # migrations before the HTTP server starts.  Give it 90s before failures count.
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Bot service (Telegram / VK message handler)
+  bot:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/bot:${IMAGE_TAG:-main}
+    build:
+      context: ./bot
+    container_name: groupbuy-bot
+    restart: on-failure:3
+    environment:
+      - CORE_API_URL=http://core:8000/api
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/1
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          # Python bot with aiohttp/aiogram needs at least 256M on 3GB host
+          memory: 256M
+
+  # SOCKS5 proxy for Telegram API (useful when api.telegram.org is blocked)
+  # Enable by setting TELEGRAM_USE_PROXY=true in .env
+  telegram-proxy:
+    image: serjs/go-socks5-proxy:latest
+    container_name: groupbuy-telegram-proxy
+    restart: unless-stopped
+    networks:
+      - groupbuy-network
+    profiles:
+      - proxy
+
+  # Telegram adapter
+  telegram-adapter:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
+    build:
+      context: ./adapters/telegram
+    container_name: groupbuy-telegram-adapter
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
+      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Mattermost adapter
+  mattermost-adapter:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
+    build:
+      context: ./adapters/mattermost
+    container_name: groupbuy-mattermost-adapter
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - MATTERMOST_URL=${MATTERMOST_URL}
+      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
+      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
+      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
+      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
+    ports:
+      - "8002:8002"
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # WebSocket server for real-time chat
+  websocket-server:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/websocket:${IMAGE_TAG:-main}
+    build:
+      context: ./infrastructure/websocket
+    container_name: groupbuy-websocket
+    restart: on-failure:3
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/2
+      - CORE_API_URL=http://core:8000/api
+      - JWT_SECRET=${JWT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # React frontend (production build)
+  frontend-react:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/frontend:${IMAGE_TAG:-main}
+    build:
+      context: ./frontend-react
+    container_name: groupbuy-frontend
+    restart: on-failure:3
+    depends_on:
+      core:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # PostgreSQL database (tuned for production)
+  # IMPORTANT: POSTGRES_PASSWORD is only used on first initialization of the data volume.
+  # If the volume already exists with a different password, you must delete it:
+  #   docker volume rm groupbuy-bot_postgres_data
+  postgres:
+    image: postgres:16-alpine
+    container_name: groupbuy-postgres
+    restart: on-failure:3
+    environment:
+      - POSTGRES_DB=${DB_NAME:-groupbuy}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - groupbuy-network
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c random_page_cost=1.1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Redis (persistent, with password and memory limit)
+  redis:
+    image: redis:7-alpine
+    container_name: groupbuy-redis
+    restart: on-failure:3
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --requirepass ${REDIS_PASSWORD:-redis_secret}
+      --maxmemory 200mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Nginx reverse proxy with SSL
+  # On first run without SSL certs, a temporary self-signed certificate is generated
+  # so the app is accessible via http://<server-ip> immediately.
+  # Replace with real certs using: bash scripts/init-letsencrypt.sh
+  #
+  # NOTE: If you get "failed to bind host port ... address already in use" for port 80 or 443,
+  # another process (e.g. nginx, Apache) is already listening on that port.
+  # Fix: stop the conflicting service first:
+  #   sudo systemctl stop nginx    # or apache2, caddy, etc.
+  # Or use setup-prod.sh which detects and handles port conflicts automatically.
+  nginx:
+    image: nginx:alpine
+    container_name: groupbuy-nginx
+    restart: on-failure:3
+    entrypoint: ["/docker-entrypoint-custom.sh"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx-api.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl
+      - certbot_webroot:/var/www/certbot:ro
+      - letsencrypt_data:/etc/letsencrypt:ro
+    depends_on:
+      core:
+        condition: service_healthy
+      django-admin:
+        condition: service_started
+      websocket-server:
+        condition: service_started
+      frontend-react:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Certbot for automatic Let's Encrypt SSL certificate renewal
+  certbot:
+    image: certbot/certbot:latest
+    container_name: groupbuy-certbot
+    restart: on-failure:3
+    volumes:
+      - letsencrypt_data:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    # Renew certificates twice a day; certbot only acts when < 30 days remain
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+volumes:
+  postgres_data:
+  redis_data:
+  letsencrypt_data:
+  certbot_webroot:
+
+networks:
+  groupbuy-network:
+    driver: bridge

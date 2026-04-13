@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="GroupBuy - Личный кабинет">
+    <meta name="theme-color" content="#ffffff">
+    <title>GroupBuy - Личный кабинет</title>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="/static/css/lk-style.css">
+</head>
+<body>
+
+    <!-- ==========================================
+         PERSONAL CABINET SCREEN (LK)
+    ========================================== -->
+    <div id="app" class="app-root">
+
+        <!-- ========== DESKTOP SIDEBAR (hidden on mobile via CSS) ========== -->
+        <aside class="lk-sidebar" id="lk-sidebar">
+            <!-- Profile -->
+            <div class="sidebar-profile">
+                <div class="sidebar-avatar" id="sidebar-avatar">ИВ</div>
+                <div class="sidebar-name" id="sidebar-name">Иван Васильев</div>
+                <div class="sidebar-role" id="sidebar-role">Покупатель</div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="sidebar-nav">
+                <button class="sidebar-nav-item active" onclick="LK.goHome()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                        <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                    Главная
+                </button>
+                <button class="sidebar-nav-item" onclick="LK.openSection('subscriptions')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                    Подписки
+                </button>
+                <button class="sidebar-nav-item" onclick="LK.openSection('exchange')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
+                    </svg>
+                    Биржа
+                </button>
+                <button class="sidebar-nav-item" onclick="LK.openCurrentPurchases()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+                        <line x1="3" y1="6" x2="21" y2="6"/>
+                        <path d="M16 10a4 4 0 01-8 0"/>
+                    </svg>
+                    Текущие закупки
+                    <span class="sidebar-badge">2</span>
+                </button>
+                <button class="sidebar-nav-item" onclick="LK.openCreateRequest()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="16"/>
+                        <line x1="8" y1="12" x2="16" y2="12"/>
+                    </svg>
+                    Создать запрос
+                </button>
+                <button class="sidebar-nav-item" onclick="LK.openHistory()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    История закупок
+                </button>
+                <button class="sidebar-nav-item" onclick="LK.openSettings()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    Настройки
+                </button>
+            </nav>
+
+            <!-- Footer actions -->
+            <div class="sidebar-footer">
+                <button class="btn-action" onclick="LK.downloadApp()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <path d="M18 9a6 6 0 01-6 6m0 0a6 6 0 01-6-6m6 6V3m-6 18h12"/>
+                    </svg>
+                    Скачать приложение
+                </button>
+                <button class="btn-action btn-action-outline" onclick="LK.switchRole()">
+                    Сменить роль
+                </button>
+            </div>
+        </aside>
+
+        <!-- ========== MAIN CONTENT AREA ========== -->
+        <div class="lk-main" id="lk-main">
+
+        <!-- ========== SCREEN: LK (main) ========== -->
+        <div id="screen-lk" class="screen active">
+
+            <!-- TOP BAR (non-scrollable) -->
+            <div class="lk-topbar">
+                <!-- Row 1: Avatar | Download App | Switch Role -->
+                <div class="lk-topbar-row lk-topbar-row1">
+                    <button class="btn-avatar" id="lk-avatar-btn" onclick="LK.openProfile()" aria-label="Аватарка">
+                        <div class="avatar-circle" id="lk-avatar">ИВ</div>
+                    </button>
+                    <div class="lk-topbar-actions">
+                        <button class="btn-action" onclick="LK.downloadApp()">
+                            <svg class="btn-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 9a6 6 0 01-6 6m0 0a6 6 0 01-6-6m6 6V3m-6 18h12"></path>
+                            </svg>
+                            Скачать приложение
+                        </button>
+                        <button class="btn-action btn-action-outline" onclick="LK.switchRole()">
+                            Сменить роль
+                        </button>
+                    </div>
+                </div>
+                <!-- Row 2: Balance -->
+                <div class="lk-topbar-row lk-topbar-row2">
+                    <button class="btn-balance" onclick="LK.openBalance()">
+                        <svg class="btn-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="5" width="20" height="14" rx="2"/>
+                            <line x1="2" y1="10" x2="22" y2="10"/>
+                        </svg>
+                        Баланс
+                    </button>
+                </div>
+                <!-- Row 3: Horizontal slider carousel (7 cards) -->
+                <div class="lk-slider-wrapper">
+                    <div class="lk-slider-track" id="lk-slider-track">
+                        <!-- 1 Подписки -->
+                        <div class="lk-card" onclick="LK.openSection('subscriptions')">
+                            <div class="lk-card-title">Подписки</div>
+                            <div class="lk-card-desc">Каналы и блоги, на которые вы подписаны</div>
+                        </div>
+                        <!-- 2 Биржа -->
+                        <div class="lk-card" onclick="LK.openSection('exchange')">
+                            <div class="lk-card-title">Биржа</div>
+                            <div class="lk-card-desc">Купля и продажа товаров между участниками</div>
+                        </div>
+                        <!-- 3 Отдых -->
+                        <div class="lk-card" onclick="LK.openSection('leisure')">
+                            <div class="lk-card-title">Отдых</div>
+                            <div class="lk-card-desc">Запросы и предложения для отдыха</div>
+                        </div>
+                        <!-- 4 Соревнования -->
+                        <div class="lk-card" onclick="LK.openSection('competitions')">
+                            <div class="lk-card-title">Соревнования</div>
+                            <div class="lk-card-desc">Участвуйте в соревнованиях и выигрывайте</div>
+                        </div>
+                        <!-- 5 Жильё -->
+                        <div class="lk-card" onclick="LK.openSection('housing')">
+                            <div class="lk-card-title">Жильё</div>
+                            <div class="lk-card-desc">Проект «Честное жильё» — группы покупателей</div>
+                        </div>
+                        <!-- 6 Новости -->
+                        <div class="lk-card" onclick="LK.openSection('news')">
+                            <div class="lk-card-title">Новости</div>
+                            <div class="lk-card-desc">Актуальные посты от поставщиков и организаторов</div>
+                        </div>
+                        <!-- 7 Блоги / каналы -->
+                        <div class="lk-card" onclick="LK.openSection('blogs')">
+                            <div class="lk-card-title">Блоги / каналы</div>
+                            <div class="lk-card-desc">Лента постов и популярные материалы</div>
+                        </div>
+                    </div>
+                    <!-- Slider scroll dots -->
+                    <div class="lk-slider-dots" id="lk-slider-dots">
+                        <span class="lk-dot active" data-idx="0"></span>
+                        <span class="lk-dot" data-idx="1"></span>
+                        <span class="lk-dot" data-idx="2"></span>
+                        <span class="lk-dot" data-idx="3"></span>
+                        <span class="lk-dot" data-idx="4"></span>
+                        <span class="lk-dot" data-idx="5"></span>
+                        <span class="lk-dot" data-idx="6"></span>
+                    </div>
+                </div>
+            </div><!-- /lk-topbar -->
+
+            <!-- SCROLLABLE BODY -->
+            <div class="lk-body">
+                <!-- Search bar -->
+                <div class="search-bar">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input class="search-input" type="text" placeholder="Поиск..." oninput="LK.search(this.value)">
+                </div>
+
+                <!-- Messages list -->
+                <div class="section-block">
+                    <div class="section-title">Сообщения</div>
+                    <div id="lk-messages-list" class="messages-list">
+                        <div class="message-item">
+                            <div class="message-avatar" style="background:#e17076">МП</div>
+                            <div class="message-info">
+                                <div class="message-row">
+                                    <span class="message-name">Мед Пасека</span>
+                                    <span class="message-time">14:32</span>
+                                </div>
+                                <div class="message-text">Новая партия мёда готова к отправке</div>
+                            </div>
+                            <div class="message-badge">3</div>
+                        </div>
+                        <div class="message-item">
+                            <div class="message-avatar" style="background:#65aadd">ОЗ</div>
+                            <div class="message-info">
+                                <div class="message-row">
+                                    <span class="message-name">Органическая Закупка</span>
+                                    <span class="message-time">12:15</span>
+                                </div>
+                                <div class="message-text">Список участников обновлён</div>
+                            </div>
+                        </div>
+                        <div class="message-item">
+                            <div class="message-avatar" style="background:#7bc862">ФГ</div>
+                            <div class="message-info">
+                                <div class="message-row">
+                                    <span class="message-name">Фермерские Греча</span>
+                                    <span class="message-time">Вчера</span>
+                                </div>
+                                <div class="message-text">Набор завершён, спасибо всем!</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invitations -->
+                <div class="section-block">
+                    <div class="section-title">Приглашения</div>
+                    <div id="lk-invitations-list" class="messages-list">
+                        <div class="message-item">
+                            <div class="message-avatar" style="background:#faa774">КА</div>
+                            <div class="message-info">
+                                <div class="message-row">
+                                    <span class="message-name">Кофейный Аромат</span>
+                                    <span class="message-time">Вчера</span>
+                                </div>
+                                <div class="message-text">Приглашаем в закупку элитного кофе</div>
+                            </div>
+                            <button class="btn-invite-accept" onclick="LK.acceptInvite(1)">Принять</button>
+                        </div>
+                        <div class="message-item">
+                            <div class="message-avatar" style="background:#a695e7">СО</div>
+                            <div class="message-info">
+                                <div class="message-row">
+                                    <span class="message-name">Свежие Овощи</span>
+                                    <span class="message-time">2 апр</span>
+                                </div>
+                                <div class="message-text">Присоединяйтесь к сезонной закупке</div>
+                            </div>
+                            <button class="btn-invite-accept" onclick="LK.acceptInvite(2)">Принять</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current purchases -->
+                <div class="section-block">
+                    <button class="list-action-btn" onclick="LK.openCurrentPurchases()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+                            <line x1="3" y1="6" x2="21" y2="6"/>
+                            <path d="M16 10a4 4 0 01-8 0"/>
+                        </svg>
+                        Текущие закупки
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Create request -->
+                <div class="section-block">
+                    <button class="list-action-btn list-action-btn-primary" onclick="LK.openCreateRequest()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="16"/>
+                            <line x1="8" y1="12" x2="16" y2="12"/>
+                        </svg>
+                        Создать запрос
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Purchase history -->
+                <div class="section-block">
+                    <button class="list-action-btn" onclick="LK.openHistory()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        История закупок
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Settings -->
+                <div class="section-block">
+                    <button class="list-action-btn" onclick="LK.openSettings()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                        </svg>
+                        Настройки
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div style="height: 40px;"></div>
+            </div><!-- /lk-body -->
+        </div><!-- /screen-lk -->
+
+
+        <!-- ========== SCREEN: SECTION (generic page+slider layout) ========== -->
+        <div id="screen-section" class="screen">
+
+            <!-- Section header -->
+            <div class="screen-header">
+                <button class="btn-back" onclick="LK.goBack()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <span class="screen-title" id="section-title">Раздел</span>
+                <div class="header-spacer"></div>
+            </div>
+
+            <!-- Search -->
+            <div class="search-bar search-bar-inner">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" placeholder="Поиск..." id="section-search-input">
+            </div>
+
+            <!-- Section slider -->
+            <div class="section-slider-wrapper">
+                <div class="section-slider-label" id="section-slider-label">Приглашения</div>
+                <div class="section-slider-track" id="section-slider-track">
+                    <!-- Cards dynamically rendered -->
+                </div>
+            </div>
+
+            <!-- Section content body -->
+            <div class="section-body" id="section-body">
+                <!-- Content dynamically rendered -->
+            </div>
+
+        </div><!-- /screen-section -->
+
+
+        <!-- ========== SCREEN: CREATE REQUEST (хочу-могу) ========== -->
+        <div id="screen-create-request" class="screen">
+
+            <div class="screen-header">
+                <button class="btn-back" onclick="LK.goBack()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <span class="screen-title">Создать запрос</span>
+                <div class="header-spacer"></div>
+            </div>
+
+            <!-- Search -->
+            <div class="search-bar search-bar-inner">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" placeholder="Поиск...">
+            </div>
+
+            <!-- Organizer invitations slider -->
+            <div class="section-slider-wrapper">
+                <div class="section-slider-label">Приглашения от организаторов</div>
+                <div class="section-slider-track" id="create-request-slider">
+                    <div class="section-card">
+                        <div class="section-card-title">Мед натуральный</div>
+                        <div class="section-card-desc">Организатор: Иван П. • 24 участника</div>
+                        <div class="section-card-meta">Дедлайн: 15 апр</div>
+                    </div>
+                    <div class="section-card">
+                        <div class="section-card-title">Греча фермерская</div>
+                        <div class="section-card-desc">Организатор: Мария С. • 18 участников</div>
+                        <div class="section-card-meta">Дедлайн: 20 апр</div>
+                    </div>
+                    <div class="section-card">
+                        <div class="section-card-title">Кофе элитный</div>
+                        <div class="section-card-desc">Организатор: Алексей К. • 32 участника</div>
+                        <div class="section-card-meta">Дедлайн: 25 апр</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form body (start from last place / pinned) -->
+            <div class="section-body">
+                <div class="pinned-message">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                    Хочу-могу: опишите, что вы ищете или что предлагаете
+                </div>
+
+                <form class="request-form" onsubmit="LK.submitRequest(event)">
+                    <div class="form-group">
+                        <label class="form-label">Тип запроса</label>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="req-type" value="want" checked> Хочу купить
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="req-type" value="can"> Могу предложить
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Категория</label>
+                        <select class="form-input">
+                            <option>Продукты питания</option>
+                            <option>Товары для дома</option>
+                            <option>Электроника</option>
+                            <option>Одежда и обувь</option>
+                            <option>Другое</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Название / описание</label>
+                        <textarea class="form-input form-textarea" placeholder="Опишите запрос подробно..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Количество</label>
+                        <input class="form-input" type="number" placeholder="Количество единиц">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Желаемая цена (руб.)</label>
+                        <input class="form-input" type="number" placeholder="0">
+                    </div>
+                    <button type="submit" class="btn-submit">Опубликовать запрос</button>
+                </form>
+            </div>
+
+        </div><!-- /screen-create-request -->
+
+
+        <!-- ========== SCREEN: CURRENT PURCHASES ========== -->
+        <div id="screen-current-purchases" class="screen">
+
+            <div class="screen-header">
+                <button class="btn-back" onclick="LK.goBack()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <span class="screen-title">Текущие закупки</span>
+                <div class="header-spacer"></div>
+            </div>
+
+            <div class="search-bar search-bar-inner">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" placeholder="Поиск закупок...">
+            </div>
+
+            <div class="section-body">
+                <div class="purchase-item" onclick="LK.openChat(1)">
+                    <div class="purchase-icon" style="background:#34A8F0">МП</div>
+                    <div class="purchase-info">
+                        <div class="purchase-name">Мёд Пасека — 50 кг</div>
+                        <div class="purchase-meta">24 участника • Дедлайн: 15 апр</div>
+                        <div class="purchase-progress-bar"><div class="purchase-progress-fill" style="width:72%"></div></div>
+                        <div class="purchase-stats">72% собрано • 72 000 ₽ из 100 000 ₽</div>
+                    </div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </div>
+                <div class="purchase-item" onclick="LK.openChat(2)">
+                    <div class="purchase-icon" style="background:#7bc862">ОЗ</div>
+                    <div class="purchase-info">
+                        <div class="purchase-name">Органические овощи</div>
+                        <div class="purchase-meta">18 участников • Дедлайн: 20 апр</div>
+                        <div class="purchase-progress-bar"><div class="purchase-progress-fill" style="width:45%"></div></div>
+                        <div class="purchase-stats">45% собрано • 13 500 ₽ из 30 000 ₽</div>
+                    </div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </div>
+            </div>
+        </div><!-- /screen-current-purchases -->
+
+
+        <!-- ========== SCREEN: PURCHASE CHAT ========== -->
+        <div id="screen-chat" class="screen">
+
+            <div class="screen-header">
+                <button class="btn-back" onclick="LK.goBack()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <div class="chat-header-avatar" id="chat-header-avatar" style="background:#34A8F0">МП</div>
+                <div class="chat-header-info">
+                    <div class="screen-title" id="chat-screen-title">Мёд Пасека</div>
+                    <div class="chat-header-meta" id="chat-screen-meta">24 участника</div>
+                </div>
+                <button class="btn-icon-sm" onclick="LK.openChatInfo()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="search-bar search-bar-inner">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" placeholder="Поиск в чате...">
+            </div>
+
+            <div class="chat-messages" id="chat-messages">
+                <div class="system-msg">Добро пожаловать в чат закупки «Мёд Пасека»</div>
+                <div class="msg msg-in">
+                    <div class="msg-avatar" style="background:#e17076">ИП</div>
+                    <div class="msg-bubble">
+                        <div class="msg-sender">Иван П. (Организатор)</div>
+                        <div class="msg-text">Добрый день! Набор идёт отлично. 72% уже собрано.</div>
+                        <div class="msg-time">14:30</div>
+                    </div>
+                </div>
+                <div class="msg msg-out">
+                    <div class="msg-bubble">
+                        <div class="msg-text">Когда ожидать отправку?</div>
+                        <div class="msg-time">14:32 ✓✓</div>
+                    </div>
+                </div>
+                <div class="msg msg-in">
+                    <div class="msg-avatar" style="background:#e17076">ИП</div>
+                    <div class="msg-bubble">
+                        <div class="msg-sender">Иван П. (Организатор)</div>
+                        <div class="msg-text">Как только соберём 100%, оформим заказ и отправим в течение 3 дней.</div>
+                        <div class="msg-time">14:35</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <button class="btn-icon-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                </button>
+                <textarea class="chat-input" placeholder="Сообщение..." rows="1"></textarea>
+                <button class="btn-send" onclick="LK.sendMessage()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                </button>
+            </div>
+        </div><!-- /screen-chat -->
+
+
+        <!-- ========== SCREEN: PURCHASE HISTORY ========== -->
+        <div id="screen-history" class="screen">
+
+            <div class="screen-header">
+                <button class="btn-back" onclick="LK.goBack()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <span class="screen-title">История закупок</span>
+                <div class="header-spacer"></div>
+            </div>
+
+            <div class="search-bar search-bar-inner">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" placeholder="Поиск по истории...">
+            </div>
+
+            <div class="section-body">
+                <div class="purchase-item purchase-item-done">
+                    <div class="purchase-icon" style="background:#7bc862">ФГ</div>
+                    <div class="purchase-info">
+                        <div class="purchase-name">Фермерская Греча — 30 кг</div>
+                        <div class="purchase-meta">Завершено: 25 март 2026</div>
+                        <div class="purchase-stats done-stats">✓ Успешно • 45 000 ₽</div>
+                    </div>
+                </div>
+                <div class="purchase-item purchase-item-done">
+                    <div class="purchase-icon" style="background:#faa774">КЭ</div>
+                    <div class="purchase-info">
+                        <div class="purchase-name">Кофе Эфиопия — 5 кг</div>
+                        <div class="purchase-meta">Завершено: 10 март 2026</div>
+                        <div class="purchase-stats done-stats">✓ Успешно • 12 500 ₽</div>
+                    </div>
+                </div>
+                <div class="purchase-item purchase-item-done">
+                    <div class="purchase-icon" style="background:#a695e7">ОД</div>
+                    <div class="purchase-info">
+                        <div class="purchase-name">Оливковое Масло</div>
+                        <div class="purchase-meta">Завершено: 1 март 2026</div>
+                        <div class="purchase-stats done-stats">✓ Успешно • 8 200 ₽</div>
+                    </div>
+                </div>
+            </div>
+        </div><!-- /screen-history -->
+
+
+        <!-- ========== SCREEN: SETTINGS ========== -->
+        <div id="screen-settings" class="screen">
+
+            <div class="screen-header">
+                <button class="btn-back" onclick="LK.goBack()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <span class="screen-title">Настройки</span>
+                <div class="header-spacer"></div>
+            </div>
+
+            <div class="search-bar search-bar-inner">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="search-input" type="text" placeholder="Поиск настроек...">
+            </div>
+
+            <div class="section-body">
+                <!-- Theme -->
+                <div class="settings-section">
+                    <div class="settings-section-title">Внешний вид</div>
+                    <div class="settings-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <circle cx="12" cy="12" r="5"/>
+                            <line x1="12" y1="1" x2="12" y2="3"/>
+                            <line x1="12" y1="21" x2="12" y2="23"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                        </svg>
+                        <span class="settings-item-label">Тема</span>
+                        <div class="theme-switcher">
+                            <button class="theme-btn active" onclick="LK.setTheme('light')">Светлая</button>
+                            <button class="theme-btn" onclick="LK.setTheme('dark')">Тёмная</button>
+                        </div>
+                    </div>
+                    <div class="settings-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <polyline points="4 7 4 4 20 4 20 7"/>
+                            <line x1="9" y1="20" x2="15" y2="20"/>
+                            <line x1="12" y1="4" x2="12" y2="20"/>
+                        </svg>
+                        <span class="settings-item-label">Размер шрифта</span>
+                        <div class="font-size-control">
+                            <button class="font-btn" onclick="LK.changeFontSize(-1)">А−</button>
+                            <span class="font-size-value" id="font-size-display">14px</span>
+                            <button class="font-btn" onclick="LK.changeFontSize(1)">А+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notifications -->
+                <div class="settings-section">
+                    <div class="settings-section-title">Уведомления</div>
+                    <div class="settings-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 01-3.46 0"/>
+                        </svg>
+                        <span class="settings-item-label">Сообщения</span>
+                        <label class="toggle">
+                            <input type="checkbox" checked onchange="LK.toggleNotifications('messages', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="settings-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                            <polyline points="22,6 12,13 2,6"/>
+                        </svg>
+                        <span class="settings-item-label">Приглашения</span>
+                        <label class="toggle">
+                            <input type="checkbox" checked onchange="LK.toggleNotifications('invitations', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Language -->
+                <div class="settings-section">
+                    <div class="settings-section-title">Язык</div>
+                    <div class="settings-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="2" y1="12" x2="22" y2="12"/>
+                            <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+                        </svg>
+                        <span class="settings-item-label">Язык интерфейса</span>
+                        <select class="settings-select" onchange="LK.changeLanguage(this.value)">
+                            <option value="ru" selected>Русский</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Account -->
+                <div class="settings-section">
+                    <div class="settings-section-title">Аккаунт</div>
+                    <button class="settings-danger-btn" onclick="LK.logout()">Выйти из аккаунта</button>
+                </div>
+            </div>
+        </div><!-- /screen-settings -->
+
+        </div><!-- /lk-main -->
+    </div><!-- /app-root -->
+
+    <!-- Script -->
+    <script src="/static/js/lk.js"></script>
+</body>
+</html>

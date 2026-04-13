@@ -1,0 +1,63 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reputation-service
+  labels:
+    app: reputation-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reputation-service
+  template:
+    metadata:
+      labels:
+        app: reputation-service
+    spec:
+      containers:
+        - name: reputation-service
+          image: groupbuy/reputation-service:latest
+          ports:
+            - containerPort: 4008
+          env:
+            - name: PORT
+              value: "4008"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: reputation-db-secret
+                  key: url
+            - name: KAFKA_BROKERS
+              value: "kafka-0.kafka:9092,kafka-1.kafka:9092,kafka-2.kafka:9092"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4008
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4008
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reputation-service
+spec:
+  selector:
+    app: reputation-service
+  ports:
+    - port: 4008
+      targetPort: 4008
+  type: ClusterIP

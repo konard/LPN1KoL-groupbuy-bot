@@ -1,0 +1,87 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: groupbuy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: groupbuy/auth-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4001
+          env:
+            - name: PORT
+              value: "4001"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secret
+                  key: database-url
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: refresh-secret
+            - name: JWT_EXPIRES_IN
+              value: "15m"
+            - name: JWT_REFRESH_EXPIRES_IN
+              value: "7d"
+            - name: BCRYPT_ROUNDS
+              value: "10"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4001
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: groupbuy
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: 4001
+      targetPort: 4001
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-service-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  database-url: "postgresql://auth_user:auth_password_change_me@postgres-auth:5432/auth_db"

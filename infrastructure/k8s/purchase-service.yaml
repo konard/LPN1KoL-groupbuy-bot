@@ -1,0 +1,70 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: purchase-service
+  namespace: groupbuy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: purchase-service
+  template:
+    metadata:
+      labels:
+        app: purchase-service
+    spec:
+      containers:
+        - name: purchase-service
+          image: groupbuy/purchase-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4002
+          env:
+            - name: PORT
+              value: "4002"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: purchase-service-secret
+                  key: database-url
+            - name: KAFKA_BROKERS
+              value: "kafka:9092"
+            - name: KAFKA_CLIENT_ID
+              value: "purchase-service"
+            - name: KAFKA_GROUP_ID
+              value: "purchase-group"
+          livenessProbe:
+            httpGet:
+              path: /purchases/health
+              port: 4002
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: purchase-service
+  namespace: groupbuy
+spec:
+  selector:
+    app: purchase-service
+  ports:
+    - port: 4002
+      targetPort: 4002
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: purchase-service-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  database-url: "postgresql://purchase_user:purchase_password_change_me@postgres-purchase:5432/purchase_db"

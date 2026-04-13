@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "paths": {
+      "@nestjs/common": ["node_modules/@nestjs/common"],
+      "@nestjs/common/*": ["node_modules/@nestjs/common/*"],
+      "@nestjs/config": ["node_modules/@nestjs/config"],
+      "@nestjs/config/*": ["node_modules/@nestjs/config/*"],
+      "@nestjs/typeorm": ["node_modules/@nestjs/typeorm"],
+      "@nestjs/typeorm/*": ["node_modules/@nestjs/typeorm/*"],
+      "@nestjs/schedule": ["node_modules/@nestjs/schedule"],
+      "@nestjs/schedule/*": ["node_modules/@nestjs/schedule/*"],
+      "@nestjs/testing": ["node_modules/@nestjs/testing"],
+      "@nestjs/testing/*": ["node_modules/@nestjs/testing/*"],
+      "typeorm": ["node_modules/typeorm"],
+      "typeorm/*": ["node_modules/typeorm/*"],
+      "kafkajs": ["node_modules/kafkajs"],
+      "kafkajs/*": ["node_modules/kafkajs/*"]
+    },
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noImplicitAny": false
+  },
+  "include": [
+    "**/*.ts",
+    "../../services/purchase-service/src/**/*.ts"
+  ]
+}

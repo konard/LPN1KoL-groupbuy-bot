@@ -1,0 +1,78 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  namespace: groupbuy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analytics-service
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+    spec:
+      containers:
+        - name: analytics-service
+          image: groupbuy/analytics-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4006
+          env:
+            - name: PORT
+              value: "4006"
+            - name: KAFKA_BROKERS
+              value: "kafka:9092"
+            - name: KAFKA_GROUP_ID
+              value: "analytics-group"
+            - name: S3_ENDPOINT
+              value: "http://minio:9000"
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: secret-key
+            - name: S3_BUCKET
+              value: "analytics-reports"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4006
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  namespace: groupbuy
+spec:
+  selector:
+    app: analytics-service
+  ports:
+    - port: 4006
+      targetPort: 4006
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  access-key: minio_admin
+  secret-key: minio_password_change_me

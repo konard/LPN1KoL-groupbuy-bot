@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "paths": {
+      "@nestjs/common": ["node_modules/@nestjs/common"],
+      "@nestjs/common/*": ["node_modules/@nestjs/common/*"],
+      "@nestjs/config": ["node_modules/@nestjs/config"],
+      "@nestjs/config/*": ["node_modules/@nestjs/config/*"],
+      "@nestjs/core": ["node_modules/@nestjs/core"],
+      "@nestjs/core/*": ["node_modules/@nestjs/core/*"],
+      "@nestjs/jwt": ["node_modules/@nestjs/jwt"],
+      "@nestjs/jwt/*": ["node_modules/@nestjs/jwt/*"],
+      "@nestjs/testing": ["node_modules/@nestjs/testing"],
+      "@nestjs/testing/*": ["node_modules/@nestjs/testing/*"],
+      "typeorm": ["node_modules/typeorm"],
+      "typeorm/*": ["node_modules/typeorm/*"]
+    },
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noImplicitAny": false
+  },
+  "include": [
+    "**/*.ts",
+    "../../services/auth-service/src/**/*.ts"
+  ]
+}

@@ -1,0 +1,195 @@
+use actix_web::{web, HttpResponse};
+use sqlx::PgPool;
+
+use crate::models::chat::*;
+
+/// GET /api/chat/messages/?procurement=...
+#[utoipa::path(
+    get,
+    path = "/api/chat/messages/",
+    tag = "chat",
+    params(
+        ("procurement" = Option<i32>, Query, description = "Filter by procurement ID"),
+        ("user" = Option<i32>, Query, description = "Filter by user ID")
+    ),
+    responses(
+        (status = 200, description = "List of messages")
+    )
+)]
+pub async fn list_messages(
+    pool: web::Data<PgPool>,
+    query: web::Query<MessageQuery>,
+) -> HttpResponse {
+    let messages = if let Some(procurement_id) = query.procurement {
+        sqlx::query_as::<_, Message>(
+            "SELECT * FROM chat_messages WHERE procurement_id = $1 AND is_deleted = false ORDER BY created_at ASC",
+        )
+        .bind(procurement_id)
+        .fetch_all(pool.get_ref())
+        .await
+    } else {
+        sqlx::query_as::<_, Message>(
+            "SELECT * FROM chat_messages WHERE is_deleted = false ORDER BY created_at ASC LIMIT 100",
+        )
+        .fetch_all(pool.get_ref())
+        .await
+    };
+
+    match messages {
+        Ok(msgs) => HttpResponse::Ok().json(serde_json::json!({"results": msgs})),
+        Err(e) => {
+            tracing::error!("Failed to fetch messages: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "Database error"}))
+        }
+    }
+}
+
+/// POST /api/chat/messages/
+#[utoipa::path(
+    post,
+    path = "/api/chat/messages/",
+    tag = "chat",
+    request_body = CreateMessage,
+    responses(
+        (status = 201, description = "Message created", body = Message),
+        (status = 400, description = "Bad request")
+    )
+)]
+pub async fn create_message(
+    pool: web::Data<PgPool>,
+    body: web::Json<CreateMessage>,
+) -> HttpResponse {
+    let data = body.into_inner();
+    let message_type = data.message_type.unwrap_or_else(|| "text".to_string());
+    let attachment_url = data.attachment_url.unwrap_or_default();
+
+    match sqlx::query_as::<_, Message>(
+        r#"INSERT INTO chat_messages (procurement_id, user_id, message_type, text, attachment_url)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *"#,
+    )
+    .bind(data.procurement)
+    .bind(data.user)
+    .bind(&message_type)
+    .bind(&data.text)
+    .bind(&attachment_url)
+    .fetch_one(pool.get_ref())
+    .await
+    {
+        Ok(message) => HttpResponse::Created().json(message),
+        Err(e) => {
+            tracing::error!("Failed to create message: {}", e);
+            HttpResponse::BadRequest().json(serde_json::json!({"error": format!("{}", e)}))
+        }
+    }
+}
+
+/// POST /api/chat/messages/mark_read/
+pub async fn mark_messages_read(
+    pool: web::Data<PgPool>,
+    body: web::Json<serde_json::Value>,
+) -> HttpResponse {
+    let user_id = match body.get("user_id").and_then(|v| v.as_i64()) {
+        Some(id) => id as i32,
+        None => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({"error": "user_id and procurement_id are required"}))
+        }
+    };
+    let procurement_id = match body.get("procurement_id").and_then(|v| v.as_i64()) {
+        Some(id) => id as i32,
+        None => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({"error": "user_id and procurement_id are required"}))
+        }
+    };
+    let message_id = body.get("message_id").and_then(|v| v.as_i64()).map(|id| id as i32);
+
+    // Determine the message_id to record (use provided or fetch last message)
+    let effective_message_id = if let Some(mid) = message_id {
+        Some(mid)
+    } else {
+        sqlx::query_scalar::<_, i32>(
+            "SELECT id FROM chat_messages WHERE procurement_id = $1 AND is_deleted = false ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(procurement_id)
+        .fetch_optional(pool.get_ref())
+        .await
+        .unwrap_or(None)
+    };
+
+    if let Some(mid) = effective_message_id {
+        let _ = sqlx::query(
+            r#"INSERT INTO message_reads (user_id, procurement_id, last_read_message_id)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (user_id, procurement_id) DO UPDATE SET last_read_message_id = EXCLUDED.last_read_message_id"#,
+        )
+        .bind(user_id)
+        .bind(procurement_id)
+        .bind(mid)
+        .execute(pool.get_ref())
+        .await;
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({"message": "Marked as read"}))
+}
+
+/// POST /api/chat/notifications/{id}/mark_read/
+pub async fn mark_notification_read(
+    pool: web::Data<PgPool>,
+    path: web::Path<i32>,
+) -> HttpResponse {
+    let notification_id = path.into_inner();
+    match sqlx::query_as::<_, Notification>(
+        "UPDATE notifications SET is_read = true WHERE id = $1 RETURNING *",
+    )
+    .bind(notification_id)
+    .fetch_optional(pool.get_ref())
+    .await
+    {
+        Ok(Some(notif)) => HttpResponse::Ok().json(notif),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({"detail": "Not found."})),
+        Err(e) => {
+            tracing::error!("Failed to mark notification as read: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "Database error"}))
+        }
+    }
+}
+
+/// GET /api/chat/notifications/?user_id=...
+#[utoipa::path(
+    get,
+    path = "/api/chat/notifications/",
+    tag = "chat",
+    params(("user_id" = Option<i32>, Query, description = "Filter by user ID")),
+    responses(
+        (status = 200, description = "List of notifications", body = Vec<Notification>)
+    )
+)]
+pub async fn list_notifications(
+    pool: web::Data<PgPool>,
+    query: web::Query<NotificationQuery>,
+) -> HttpResponse {
+    let notifications = if let Some(user_id) = query.user_id {
+        sqlx::query_as::<_, Notification>(
+            "SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(user_id)
+        .fetch_all(pool.get_ref())
+        .await
+    } else {
+        sqlx::query_as::<_, Notification>(
+            "SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100",
+        )
+        .fetch_all(pool.get_ref())
+        .await
+    };
+
+    match notifications {
+        Ok(notifs) => HttpResponse::Ok().json(notifs),
+        Err(e) => {
+            tracing::error!("Failed to fetch notifications: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "Database error"}))
+        }
+    }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "purchase-service-tests",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/config": "^3.2.0",
+    "@nestjs/testing": "^10.3.0",
+    "@nestjs/schedule": "^4.0.1",
+    "@nestjs/typeorm": "^10.0.2",
+    "kafkajs": "^2.2.4",
+    "reflect-metadata": "^0.2.1",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": ".",
+    "testRegex": ".*\\.test\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": ["ts-jest", {
+        "tsconfig": "./tsconfig.json"
+      }]
+    },
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^../../services/purchase-service/src/(.*)$": "<rootDir>/../../services/purchase-service/src/$1"
+    },
+    "modulePaths": ["<rootDir>/node_modules"]
+  }
+}

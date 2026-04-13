@@ -1,0 +1,95 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: groupbuy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: groupbuy/notification-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4005
+          env:
+            - name: PORT
+              value: "4005"
+            - name: KAFKA_BROKERS
+              value: "kafka:9092"
+            - name: KAFKA_GROUP_ID
+              value: "notification-group"
+            - name: CENTRIFUGO_URL
+              value: "http://centrifugo:8000"
+            - name: CENTRIFUGO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: centrifugo-secret
+                  key: api-key
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: smtp-host
+            - name: SMTP_PORT
+              value: "587"
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: smtp-user
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: smtp-pass
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: smtp-from
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4005
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: groupbuy
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - port: 4005
+      targetPort: 4005
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: notification-service-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  smtp-host: smtp.example.com
+  smtp-user: notifications@example.com
+  smtp-pass: smtp_password_change_me
+  smtp-from: Groupbuy <notifications@example.com>

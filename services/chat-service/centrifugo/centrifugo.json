@@ -1,0 +1,56 @@
+{
+  "token_hmac_secret_key": "centrifugo_jwt_secret_change_in_production",
+  "api_key": "centrifugo_api_key",
+  "admin": true,
+  "admin_password": "admin_password",
+  "admin_secret": "admin_secret",
+  "allowed_origins": ["*"],
+  "port": 8000,
+  "grpc_api": false,
+
+  "engine": "redis",
+  "redis_address": "redis:6379",
+  "redis_password": "redis_secret",
+  "redis_db": 1,
+
+  "presence": true,
+  "history_size": 100,
+  "history_ttl": "24h",
+  "join_leave": true,
+  "force_push_join_leave": true,
+
+  "namespaces": [
+    {
+      "name": "purchase",
+      "presence": true,
+      "history_size": 50,
+      "history_ttl": "24h",
+      "join_leave": true,
+      "force_push_join_leave": true,
+      "allow_subscribe_for_client": false,
+      "proxy_subscribe": false
+    },
+    {
+      "name": "chat",
+      "presence": true,
+      "history_size": 200,
+      "history_ttl": "72h",
+      "join_leave": true,
+      "allow_subscribe_for_client": false
+    },
+    {
+      "name": "notifications",
+      "presence": false,
+      "history_size": 0,
+      "allow_subscribe_for_client": false
+    }
+  ],
+
+  "log_level": "info",
+
+  "websocket_compression": true,
+  "websocket_compression_min_size": 512,
+
+  "prometheus": true,
+  "health": true
+}

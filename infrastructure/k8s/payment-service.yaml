@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: groupbuy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: groupbuy/payment-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4003
+          env:
+            - name: PORT
+              value: "4003"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: payment-service-secret
+                  key: database-url
+            - name: KAFKA_BROKERS
+              value: "kafka:9092"
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: payment-service-secret
+                  key: stripe-secret-key
+            - name: YOOKASSA_SHOP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: payment-service-secret
+                  key: yookassa-shop-id
+            - name: YOOKASSA_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: payment-service-secret
+                  key: yookassa-secret-key
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4003
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: groupbuy
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: 4003
+      targetPort: 4003
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-service-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  database-url: "postgresql://payment_user:payment_password_change_me@postgres-payment:5432/payment_db"
+  stripe-secret-key: "sk_test_placeholder"
+  yookassa-shop-id: "placeholder"
+  yookassa-secret-key: "placeholder"

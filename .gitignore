@@ -1,0 +1,12 @@
+deploy.sh
+deploy.py
+.env
+*.pem
+*.key
+core-rust/target/
+__pycache__/
+*.py[cod]
+*$py.class
+ci-logs/
+node_modules/
+dist/

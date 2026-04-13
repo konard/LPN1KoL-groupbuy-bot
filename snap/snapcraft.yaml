@@ -1,0 +1,93 @@
+name: groupbuy-bot
+base: core22
+version: '4.0'
+summary: GroupBuy Bot — collaborative purchasing platform
+description: |
+  GroupBuy Bot is a scalable platform for organizing group purchases,
+  supporting Telegram, WhatsApp and WebSocket-based chat.
+
+  This snap bundles the deployment tooling (setup scripts, docker-compose
+  files) and the Rust core API binary so the service can be installed and
+  started with a single command on any Ubuntu/Linux server.
+
+  After installation:
+    sudo snap install groupbuy-bot
+    sudo groupbuy-bot.setup      # interactive first-time setup
+
+  Prerequisites: Docker and Docker Compose must be installed on the host.
+  The snap calls docker compose to manage the container stack.
+
+grade: stable
+confinement: strict
+
+architectures:
+  - build-on: amd64
+
+apps:
+  setup:
+    command: bin/setup-wrapper.sh
+    plugs:
+      - home
+      - network
+      - docker
+
+  groupbuy-api:
+    command: bin/groupbuy-api
+    daemon: simple
+    restart-condition: on-failure
+    plugs:
+      - network
+      - network-bind
+
+parts:
+  # ── Rust core API binary ──────────────────────────────────────────────────
+  core-rust:
+    plugin: rust
+    source: core-rust
+    source-type: local
+    build-packages:
+      - pkg-config
+      - libssl-dev
+      - libpq-dev
+    stage-packages:
+      - libpq5
+      - libssl3
+      - ca-certificates
+      - curl
+
+  # ── Deployment helper scripts ─────────────────────────────────────────────
+  scripts:
+    plugin: dump
+    source: scripts
+    organize:
+      '*.sh': bin/
+    filesets:
+      scripts:
+        - bin/*.sh
+    stage:
+      - $scripts
+
+  # ── Docker Compose files ──────────────────────────────────────────────────
+  compose-files:
+    plugin: dump
+    source: .
+    filesets:
+      compose:
+        - docker-compose.prod.yml
+        - docker-compose.light.yml
+        - docker-compose.unified.yml
+        - .env.example
+    stage:
+      - $compose
+
+  # ── Setup wrapper ─────────────────────────────────────────────────────────
+  setup-wrapper:
+    plugin: nil
+    override-build: |
+      mkdir -p "$SNAPCRAFT_PART_INSTALL/bin"
+      cat > "$SNAPCRAFT_PART_INSTALL/bin/setup-wrapper.sh" << 'EOF'
+      #!/bin/bash
+      # Wrapper that runs setup-prod.sh from the snap's compose directory.
+      cd "$SNAP" && bash bin/setup-prod.sh "$@"
+      EOF
+      chmod +x "$SNAPCRAFT_PART_INSTALL/bin/setup-wrapper.sh"

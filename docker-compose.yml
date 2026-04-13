@@ -1,0 +1,305 @@
+version: '3.9'
+
+services:
+  # Core API (Rust backend)
+  core:
+    build: ./core-rust
+    restart: on-failure:3
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      - PORT=8000
+      - RUST_LOG=info,groupbuy_api=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Bot service (command handlers)
+  bot:
+    build: ./bot
+    command: python main.py
+    restart: on-failure:3
+    volumes:
+      - ./bot:/app
+    environment:
+      - CORE_API_URL=http://core:8000/api
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/1
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
+      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # SOCKS5 proxy for Telegram API (useful when api.telegram.org is blocked)
+  # Enable by setting TELEGRAM_USE_PROXY=true in .env
+  telegram-proxy:
+    image: serjs/go-socks5-proxy:latest
+    container_name: telegram-proxy
+    restart: unless-stopped
+    networks:
+      - groupbuy-network
+    profiles:
+      - proxy
+
+  # Telegram adapter
+  telegram-adapter:
+    build: ./adapters/telegram
+    command: python adapter.py
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
+      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # VK adapter
+  vk-adapter:
+    build: ./adapters/vk
+    command: python adapter.py
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - VK_TOKEN=${VK_TOKEN}
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # Mattermost adapter
+  mattermost-adapter:
+    build: ./adapters/mattermost
+    command: python adapter.py
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - MATTERMOST_URL=${MATTERMOST_URL}
+      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
+      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
+      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
+      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
+    ports:
+      - "8002:8002"
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # WASM build (produces WebAssembly package from Rust)
+  wasm-builder:
+    build:
+      context: .
+      dockerfile: wasm-utils/Dockerfile
+    volumes:
+      - wasm_pkg:/wasm-pkg
+
+  # WebSocket server for real-time chat
+  websocket-server:
+    build: ./infrastructure/websocket
+    command: python chat_server.py
+    restart: on-failure:3
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/2
+      - CORE_API_URL=http://core:8000/api
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      core:
+        condition: service_healthy
+    ports:
+      - "8765:8765"
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # Microservices API gateway — routes /api/v1/* to auth and other services
+  gateway:
+    build:
+      context: ./services/gateway
+    restart: on-failure:3
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
+      AUTH_SERVICE_URL: http://auth-service:4001
+      PURCHASE_SERVICE_URL: http://purchase-service:4002
+      PAYMENT_SERVICE_URL: http://payment-service:4003
+      CHAT_SERVICE_URL: http://chat-service:4004
+      NOTIFICATION_SERVICE_URL: http://notification-service:4005
+      ANALYTICS_SERVICE_URL: http://analytics-service:4006
+      SEARCH_SERVICE_URL: http://search-service:4007
+      REPUTATION_SERVICE_URL: http://reputation-service:4008
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+      RATE_LIMIT_RPM: "60"
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  # Auth microservice — handles JWT login/registration/OTP via /api/v1/auth/*
+  auth-service:
+    build:
+      context: ./services/auth-service
+    restart: on-failure:3
+    environment:
+      PORT: 4001
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/auth_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-jwt-refresh-secret}
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:4005}
+      CORE_API_URL: http://core:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      core:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # React frontend (with WASM integration)
+  frontend-react:
+    build: ./frontend-react
+    restart: on-failure:3
+    ports:
+      - "3000:80"
+    depends_on:
+      core:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # PostgreSQL database
+  # NOTE: POSTGRES_PASSWORD is only used on first volume creation.
+  # To reset: docker compose down -v && docker compose up -d
+  postgres:
+    image: postgres:16-alpine
+    restart: on-failure:3
+    environment:
+      - POSTGRES_DB=${DB_NAME:-groupbuy}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Redis for cache and queues
+  redis:
+    image: redis:7-alpine
+    restart: on-failure:3
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_secret}
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
+volumes:
+  postgres_data:
+  redis_data:
+  wasm_pkg:
+
+networks:
+  groupbuy-network:
+    driver: bridge

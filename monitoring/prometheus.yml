@@ -1,0 +1,109 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    cluster: groupbuy
+    env: production
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Gateway (Go expvar/metrics endpoint)
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:3000"]
+    metrics_path: /metrics
+
+  # Auth Service (NestJS prom-client)
+  - job_name: auth-service
+    static_configs:
+      - targets: ["auth-service:4001"]
+    metrics_path: /metrics
+
+  # Purchase Service
+  - job_name: purchase-service
+    static_configs:
+      - targets: ["purchase-service:4002"]
+    metrics_path: /metrics
+
+  # Payment Service (Go)
+  - job_name: payment-service
+    static_configs:
+      - targets: ["payment-service:4003"]
+    metrics_path: /metrics
+
+  # Chat Service (Go)
+  - job_name: chat-service
+    static_configs:
+      - targets: ["chat-service:4004"]
+    metrics_path: /metrics
+
+  # Notification Service (Node.js)
+  - job_name: notification-service
+    static_configs:
+      - targets: ["notification-service:4005"]
+    metrics_path: /metrics
+
+  # Analytics Service (FastAPI)
+  - job_name: analytics-service
+    static_configs:
+      - targets: ["analytics-service:4006"]
+    metrics_path: /metrics
+
+  # Search Service (Go)
+  - job_name: search-service
+    static_configs:
+      - targets: ["search-service:4007"]
+    metrics_path: /metrics
+
+  # Reputation Service (NestJS)
+  - job_name: reputation-service
+    static_configs:
+      - targets: ["reputation-service:4008"]
+    metrics_path: /metrics
+
+  # Elasticsearch
+  - job_name: elasticsearch
+    static_configs:
+      - targets: ["elasticsearch:9200"]
+    metrics_path: /_prometheus/metrics
+
+  # Centrifugo
+  - job_name: centrifugo
+    static_configs:
+      - targets: ["centrifugo:8000"]
+    metrics_path: /metrics
+
+  # Kafka (JMX exporter or Kafka exporter)
+  - job_name: kafka
+    static_configs:
+      - targets: ["kafka:9308"]
+
+  # PostgreSQL exporter
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Redis exporter
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # ClickHouse
+  - job_name: clickhouse
+    static_configs:
+      - targets: ["clickhouse:8123"]
+    metrics_path: /metrics

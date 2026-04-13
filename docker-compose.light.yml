@@ -1,0 +1,424 @@
+##############################################################################
+# docker-compose.light.yml — lightweight deployment for servers with 1 GB RAM
+#
+# This configuration consolidates PostgreSQL into a single instance with
+# multiple databases, removes heavy optional services (Elasticsearch,
+# ClickHouse, MinIO, Kafka-UI, monitoring), and applies strict memory limits
+# to every container so the whole stack fits in ~900 MB.
+#
+# Microservice images are pulled from GitHub Container Registry (ghcr.io)
+# matching the same IMAGE_TAG used by docker-compose.prod.yml.
+# Set IMAGE_TAG in .env to pin a version (default: main).
+# If the registry image is unavailable (e.g. first deploy or private fork),
+# run with --build to build images locally from the ./services/* Dockerfiles.
+#
+# Two-step deployment (light microservices + main prod stack):
+#   Step 1: docker compose -f docker-compose.light.yml up -d
+#   Step 2: docker compose -f docker-compose.prod.yml up -d
+# Both files share the same groupbuy-network; always start light first.
+#
+# Single-file lightweight deployment (microservices only, no main stack):
+#   docker compose -f docker-compose.light.yml up -d
+#
+# PostgreSQL credentials: uses the same DB_USER / DB_PASSWORD / DB_NAME
+# variables as docker-compose.prod.yml and docker-compose.unified.yml so
+# all three compose files can share the same postgres_data volume without
+# credential mismatches.  Defaults: postgres / postgres / groupbuy.
+##############################################################################
+
+version: "3.9"
+
+networks:
+  # Shared network — created here on first run; docker-compose.prod.yml
+  # attaches to this existing network automatically (same project name).
+  groupbuy-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  zookeeper_data:
+
+services:
+  # ─── Infrastructure ────────────────────────────────────────────────────────
+
+  # Single PostgreSQL instance with all databases
+  # IMPORTANT: POSTGRES_PASSWORD / DB_PASSWORD is only applied on FIRST initialisation
+  # of the postgres_data volume.  If the volume was created by a previous run with
+  # different credentials, authentication will fail.  To reset:
+  #   docker compose -f docker-compose.light.yml down
+  #   docker volume rm $(docker volume ls -q | grep postgres_data)
+  #   docker compose -f docker-compose.light.yml up -d
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-groupbuy}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD:-redis_secret}
+        --maxmemory 48mb
+        --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: "-Xmx64m -Xms64m"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    healthcheck:
+      # Use bash /dev/tcp to send the ZooKeeper 'ruok' 4-letter word — lightweight
+      # and always available in confluentinc/cp-zookeeper without requiring nc.
+      test: ["CMD-SHELL", "echo ruok | timeout 5 bash -c 'cat > /dev/tcp/localhost/2181' && echo OK"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 48
+      KAFKA_HEAP_OPTS: "-Xmx128m -Xms128m"
+      KAFKA_LOG_SEGMENT_BYTES: 16777216
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 60000
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    command: centrifugo -c /centrifugo/config.json
+    # Pass Redis password via env var — centrifugo v5 uses CENTRIFUGO_REDIS_PASSWORD
+    # which maps to the "redis_password" key in centrifugo.json and overrides it.
+    # (v6 renamed this to broker_redis_password; v5 uses the plain redis_* keys.)
+    environment:
+      CENTRIFUGO_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+    volumes:
+      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json
+    ports:
+      - "8000:8000"
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  # ─── Application Services ──────────────────────────────────────────────────
+  # Images are pulled from GitHub Container Registry — same tag as prod stack.
+  # Set REGISTRY / IMAGE_PREFIX / IMAGE_TAG in .env to override.
+
+  gateway:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/gateway:${IMAGE_TAG:-main}
+    build:
+      context: ./services/gateway
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      AUTH_SERVICE_URL: http://auth-service:4001
+      PURCHASE_SERVICE_URL: http://purchase-service:4002
+      PAYMENT_SERVICE_URL: http://payment-service:4003
+      CHAT_SERVICE_URL: http://chat-service:4004
+      NOTIFICATION_SERVICE_URL: http://notification-service:4005
+      ANALYTICS_SERVICE_URL: http://analytics-service:4006
+      SEARCH_SERVICE_URL: http://search-service:4007
+      REPUTATION_SERVICE_URL: http://reputation-service:4008
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+      RATE_LIMIT_RPM: "60"
+      VOTING_RATE_LIMIT_RPM: "120"
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  auth-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/auth-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/auth-service
+    environment:
+      PORT: 4001
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/auth_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      BCRYPT_ROUNDS: 10
+      NOTIFICATION_SERVICE_URL: http://notification-service:4005
+      CORE_API_URL: ${CORE_API_URL:-http://core:8000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  purchase-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/purchase-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/purchase-service
+    environment:
+      PORT: 4002
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/purchase_db
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: purchase-service
+      KAFKA_GROUP_ID: purchase-group
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  payment-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/payment-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/payment-service
+    environment:
+      PORT: 4003
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/payment_db
+      KAFKA_BROKERS: kafka:9092
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-placeholder}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-placeholder}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  chat-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/chat-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/chat-service
+    environment:
+      PORT: 4004
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/chat_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      CENTRIFUGO_URL: http://centrifugo:8000
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      # ClickHouse disabled in light mode — chat history stored in PostgreSQL only
+      CLICKHOUSE_DSN: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      centrifugo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  notification-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/notification-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/notification-service
+    environment:
+      PORT: 4005
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: notification-group
+      CENTRIFUGO_URL: http://centrifugo:8000
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      WHATSAPP_API_URL: ${WHATSAPP_API_URL:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+    depends_on:
+      - kafka
+      - centrifugo
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 48M
+
+  analytics-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/analytics-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/analytics-service
+    environment:
+      PORT: 4006
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: analytics-group
+      # S3/MinIO disabled — reports saved to local volume
+      S3_ENDPOINT: ""
+      S3_ACCESS_KEY: ""
+      S3_SECRET_KEY: ""
+      S3_BUCKET: ""
+    depends_on:
+      - kafka
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 48M
+
+  search-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/search-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/search-service
+    environment:
+      PORT: 4007
+      # Elasticsearch disabled in light mode — search uses in-memory fallback
+      ELASTICSEARCH_URL: ""
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  reputation-service:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/reputation-service:${IMAGE_TAG:-main}
+    build:
+      context: ./services/reputation-service
+    environment:
+      PORT: 4008
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/reputation_db
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 48M
