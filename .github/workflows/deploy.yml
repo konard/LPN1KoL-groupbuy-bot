@@ -19,12 +19,11 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 50m
-          script_stop: true
+          script_stop: false
           script: |
             cd /var/www/groupbuy-bot/
-            git pull
-            docker stop $(docker ps -aq)
-            docker system prune -a --volumes -f
-            docker volume rm $(docker volume ls -q | grep "^groupbuy-bot_" | grep -v "postgres_data")
+            git pull origin main
+            docker compose -f docker-compose.unified.yml down
+            docker system prune -f
+            docker volume ls -q | grep "^groupbuy-bot_" | grep -v "postgres_data" | xargs -r docker volume rm
             docker compose -f docker-compose.unified.yml up -d --build
