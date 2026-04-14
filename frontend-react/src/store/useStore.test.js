@@ -99,6 +99,84 @@ describe('useStore – session persistence across page reloads (issue #342)', ()
   });
 });
 
+describe('useStore – OTP pending state includes maskedEmail (issue #5)', () => {
+  let useStore;
+
+  beforeEach(async () => {
+    localStorage.clear();
+    vi.resetModules();
+    const mod = await import('./useStore.js');
+    useStore = mod.useStore;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it('login stores maskedEmail from API response in otpPending', async () => {
+    const mockFetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { otpSent: true, message: 'ok', maskedEmail: 'u***@e***.com' } }),
+      headers: new Headers(),
+    }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await useStore.getState().login({ phone: '+79001234567' });
+
+    const { otpPending } = useStore.getState();
+    expect(otpPending).not.toBeNull();
+    expect(otpPending.maskedEmail).toBe('u***@e***.com');
+    expect(otpPending.context).toBe('login');
+  });
+
+  it('login sets maskedEmail to null when API does not return it', async () => {
+    const mockFetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { otpSent: true, message: 'ok' } }),
+      headers: new Headers(),
+    }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await useStore.getState().login({ phone: '+79001234567' });
+
+    const { otpPending } = useStore.getState();
+    expect(otpPending).not.toBeNull();
+    expect(otpPending.maskedEmail).toBeNull();
+  });
+
+  it('register stores maskedEmail from API response in otpPending', async () => {
+    const mockFetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { otpSent: true, message: 'ok', maskedEmail: 'u***@e***.com' } }),
+      headers: new Headers(),
+    }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await useStore.getState().register({ phone: '+79001234567', email: 'user@example.com', role: 'buyer' });
+
+    const { otpPending } = useStore.getState();
+    expect(otpPending).not.toBeNull();
+    expect(otpPending.maskedEmail).toBe('u***@e***.com');
+    expect(otpPending.context).toBe('registration');
+  });
+
+  it('register falls back to provided email when API does not return maskedEmail', async () => {
+    const mockFetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { otpSent: true, message: 'ok' } }),
+      headers: new Headers(),
+    }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await useStore.getState().register({ phone: '+79001234567', email: 'user@example.com', role: 'buyer' });
+
+    const { otpPending } = useStore.getState();
+    expect(otpPending).not.toBeNull();
+    expect(otpPending.maskedEmail).toBe('user@example.com');
+  });
+});
+
 describe('useStore – session token separation (issue #338)', () => {
   let useStore;
 

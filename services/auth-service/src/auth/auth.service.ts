@@ -46,6 +46,8 @@ export interface LoginResult {
 export interface OtpPendingResult {
   otpSent: boolean;
   message: string;
+  /** Masked email address to display in the UI, e.g. "u***@e***.com" */
+  maskedEmail?: string;
 }
 
 const ROLES_REQUIRING_2FA: string[] = [UserRole.ORGANIZER, UserRole.SUPPLIER];
@@ -107,7 +109,7 @@ export class AuthService {
 
     await this.sendOtpEmail(email, otp, 'registration');
 
-    return { otpSent: true, message: 'Verification code sent to your email' };
+    return { otpSent: true, message: 'Verification code sent to your email', maskedEmail: this.maskEmail(email) };
   }
 
   /**
@@ -184,7 +186,7 @@ export class AuthService {
 
     await this.sendOtpEmail(user.email, otp, 'login');
 
-    return { otpSent: true, message: 'If this number is registered, a code will be sent to the associated email' };
+    return { otpSent: true, message: 'If this number is registered, a code will be sent to the associated email', maskedEmail: this.maskEmail(user.email) };
   }
 
   /**
@@ -582,6 +584,23 @@ export class AuthService {
       req.write(body);
       req.end();
     });
+  }
+
+  /**
+   * Returns a masked version of an email address for display in the UI.
+   * E.g. "user@example.com" → "u***@e***.com"
+   */
+  private maskEmail(email: string): string {
+    const atIdx = email.indexOf('@');
+    if (atIdx < 0) return '***';
+    const local = email.slice(0, atIdx);
+    const domain = email.slice(atIdx + 1);
+    const dotIdx = domain.lastIndexOf('.');
+    const domainName = dotIdx > 0 ? domain.slice(0, dotIdx) : domain;
+    const tld = dotIdx > 0 ? domain.slice(dotIdx) : '';
+    const maskedLocal = local.length > 1 ? local[0] + '***' : '***';
+    const maskedDomain = domainName.length > 1 ? domainName[0] + '***' : '***';
+    return `${maskedLocal}@${maskedDomain}${tld}`;
   }
 
   private async validate2FACode(user: User, code: string): Promise<boolean> {

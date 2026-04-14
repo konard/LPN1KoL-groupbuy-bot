@@ -231,7 +231,9 @@ function LoginModal() {
 
           <h1 className="auth-title">Введите код</h1>
           <p className="auth-subtitle">
-            Код подтверждения отправлен на вашу электронную почту.
+            {otpPending.maskedEmail
+              ? `Код подтверждения отправлен на почту ${otpPending.maskedEmail}`
+              : 'Код подтверждения отправлен на вашу электронную почту.'}
           </p>
 
           <form className="auth-form" onSubmit={handleOtpSubmit}>
