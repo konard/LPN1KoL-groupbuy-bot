@@ -3,6 +3,7 @@ use jsonwebtoken::{encode, EncodingKey, Header};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::models::user::*;
 
@@ -10,7 +11,7 @@ const WS_TOKEN_TTL_SECS: u64 = 86400; // 24 hours
 
 #[derive(Debug, Serialize, Deserialize)]
 struct WsClaims {
-    user_id: i32,
+    user_id: Uuid,
     iat: u64,
     exp: u64,
 }
@@ -128,13 +129,13 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     get,
     path = "/api/users/{id}/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     responses(
         (status = 200, description = "User found", body = UserResponse),
         (status = 404, description = "User not found")
     )
 )]
-pub async fn get_user(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResponse {
+pub async fn get_user(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> HttpResponse {
     let user_id = path.into_inner();
     match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(user_id)
@@ -155,7 +156,7 @@ pub async fn get_user(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResp
     patch,
     path = "/api/users/{id}/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     request_body = UpdateUser,
     responses(
         (status = 200, description = "User updated", body = UserResponse),
@@ -164,7 +165,7 @@ pub async fn get_user(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResp
 )]
 pub async fn update_user(
     pool: web::Data<PgPool>,
-    path: web::Path<i32>,
+    path: web::Path<Uuid>,
     body: web::Json<UpdateUser>,
 ) -> HttpResponse {
     let user_id = path.into_inner();
@@ -252,13 +253,13 @@ pub async fn update_user(
     delete,
     path = "/api/users/{id}/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     responses(
         (status = 204, description = "User deleted"),
         (status = 404, description = "User not found")
     )
 )]
-pub async fn delete_user(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResponse {
+pub async fn delete_user(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> HttpResponse {
     let user_id = path.into_inner();
     match sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(user_id)
@@ -455,13 +456,13 @@ pub async fn check_user_exists(
     get,
     path = "/api/users/{id}/balance/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     responses(
         (status = 200, description = "User balance", body = UserBalanceResponse),
         (status = 404, description = "User not found")
     )
 )]
-pub async fn get_user_balance(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResponse {
+pub async fn get_user_balance(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> HttpResponse {
     let user_id = path.into_inner();
     match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(user_id)
@@ -506,7 +507,7 @@ pub async fn get_user_balance(pool: web::Data<PgPool>, path: web::Path<i32>) -> 
     post,
     path = "/api/users/{id}/update_balance/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     request_body = UpdateBalanceRequest,
     responses(
         (status = 200, description = "Balance updated"),
@@ -515,7 +516,7 @@ pub async fn get_user_balance(pool: web::Data<PgPool>, path: web::Path<i32>) -> 
 )]
 pub async fn update_user_balance(
     pool: web::Data<PgPool>,
-    path: web::Path<i32>,
+    path: web::Path<Uuid>,
     body: web::Json<UpdateBalanceRequest>,
 ) -> HttpResponse {
     let user_id = path.into_inner();
@@ -546,13 +547,13 @@ pub async fn update_user_balance(
     get,
     path = "/api/users/{id}/role/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     responses(
         (status = 200, description = "User role"),
         (status = 404, description = "User not found")
     )
 )]
-pub async fn get_user_role(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResponse {
+pub async fn get_user_role(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> HttpResponse {
     let user_id = path.into_inner();
     match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(user_id)
@@ -631,13 +632,13 @@ pub async fn search_users(
     get,
     path = "/api/users/{id}/ws_token/",
     tag = "users",
-    params(("id" = i32, Path, description = "User ID")),
+    params(("id" = Uuid, Path, description = "User ID")),
     responses(
         (status = 200, description = "WebSocket JWT token"),
         (status = 404, description = "User not found")
     )
 )]
-pub async fn get_ws_token(pool: web::Data<PgPool>, path: web::Path<i32>) -> HttpResponse {
+pub async fn get_ws_token(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> HttpResponse {
     let user_id = path.into_inner();
     // Verify the user exists before issuing a token
     match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")

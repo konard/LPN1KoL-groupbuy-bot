@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::models::chat::*;
 
@@ -10,7 +11,7 @@ use crate::models::chat::*;
     tag = "chat",
     params(
         ("procurement" = Option<i32>, Query, description = "Filter by procurement ID"),
-        ("user" = Option<i32>, Query, description = "Filter by user ID")
+        ("user" = Option<Uuid>, Query, description = "Filter by user ID")
     ),
     responses(
         (status = 200, description = "List of messages")
@@ -89,8 +90,14 @@ pub async fn mark_messages_read(
     pool: web::Data<PgPool>,
     body: web::Json<serde_json::Value>,
 ) -> HttpResponse {
-    let user_id = match body.get("user_id").and_then(|v| v.as_i64()) {
-        Some(id) => id as i32,
+    let user_id: Uuid = match body.get("user_id").and_then(|v| v.as_str()) {
+        Some(s) => match Uuid::parse_str(s) {
+            Ok(id) => id,
+            Err(_) => {
+                return HttpResponse::BadRequest()
+                    .json(serde_json::json!({"error": "user_id must be a valid UUID"}))
+            }
+        },
         None => {
             return HttpResponse::BadRequest()
                 .json(serde_json::json!({"error": "user_id and procurement_id are required"}))
@@ -161,7 +168,7 @@ pub async fn mark_notification_read(
     get,
     path = "/api/chat/notifications/",
     tag = "chat",
-    params(("user_id" = Option<i32>, Query, description = "Filter by user ID")),
+    params(("user_id" = Option<Uuid>, Query, description = "Filter by user ID")),
     responses(
         (status = 200, description = "List of notifications", body = Vec<Notification>)
     )

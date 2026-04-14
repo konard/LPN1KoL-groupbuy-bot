@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::models::procurement::*;
 
@@ -298,14 +299,14 @@ pub async fn leave_procurement(_pool: web::Data<PgPool>, path: web::Path<i32>) -
     get,
     path = "/api/procurements/user/{user_id}/",
     tag = "procurements",
-    params(("user_id" = i32, Path, description = "User ID")),
+    params(("user_id" = Uuid, Path, description = "User ID")),
     responses(
         (status = 200, description = "User's organized and participating procurements")
     )
 )]
 pub async fn get_user_procurements(
     pool: web::Data<PgPool>,
-    path: web::Path<i32>,
+    path: web::Path<Uuid>,
 ) -> HttpResponse {
     let user_id = path.into_inner();
 

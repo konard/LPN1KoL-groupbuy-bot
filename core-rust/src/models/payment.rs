@@ -3,11 +3,12 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Payment {
     pub id: i32,
-    pub user_id: i32,
+    pub user_id: Uuid,
     pub payment_type: String,
     pub amount: Decimal,
     pub status: String,
@@ -24,7 +25,7 @@ pub struct Payment {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreatePayment {
-    pub user_id: i32,
+    pub user_id: Uuid,
     pub payment_type: String,
     pub amount: Decimal,
     pub procurement_id: Option<i32>,
@@ -43,7 +44,7 @@ pub struct PaymentStatusResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Transaction {
     pub id: i32,
-    pub user_id: i32,
+    pub user_id: Uuid,
     pub transaction_type: String,
     pub amount: Decimal,
     pub balance_after: Decimal,
