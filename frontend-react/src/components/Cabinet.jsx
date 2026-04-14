@@ -452,25 +452,8 @@ function Cabinet() {
   const [selectedCarouselCategory, setSelectedCarouselCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Slider dots
+  // Slider ref
   const sliderTrackRef = useRef(null);
-  const [activeDot, setActiveDot] = useState(0);
-
-  const handleSliderScroll = useCallback(() => {
-    const track = sliderTrackRef.current;
-    if (!track) return;
-    const scrollLeft = track.scrollLeft;
-    const cardWidth = 280 + 12; // card width + gap
-    const idx = Math.round(scrollLeft / cardWidth);
-    setActiveDot(Math.min(idx, LC_SLIDER_CATEGORIES.length - 1));
-  }, []);
-
-  const scrollToCard = useCallback((idx) => {
-    const track = sliderTrackRef.current;
-    if (!track) return;
-    const cardWidth = 280 + 12;
-    track.scrollTo({ left: idx * cardWidth, behavior: 'smooth' });
-  }, []);
 
   // Set initial active section based on user role to show active purchases immediately
   useEffect(() => {
@@ -1501,7 +1484,6 @@ function Cabinet() {
           <div
             className="lk-slider-track"
             ref={sliderTrackRef}
-            onScroll={handleSliderScroll}
           >
             {LC_SLIDER_CATEGORIES.map((cat) => (
               <div
@@ -1510,18 +1492,7 @@ function Cabinet() {
                 onClick={() => handleCarouselSelect(cat)}
               >
                 <div className="lk-card-title">{cat.label}</div>
-                <div className="lk-card-desc">{cat.description}</div>
               </div>
-            ))}
-          </div>
-          {/* Slider dots */}
-          <div className="lk-slider-dots">
-            {LC_SLIDER_CATEGORIES.map((_, idx) => (
-              <span
-                key={idx}
-                className={`lk-dot${idx === activeDot ? ' active' : ''}`}
-                onClick={() => scrollToCard(idx)}
-              />
             ))}
           </div>
         </div>

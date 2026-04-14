@@ -1848,7 +1848,7 @@ input, textarea, select {
 .lk-btn-balance:hover { background: var(--tg-bg-tertiary); }
 
 /* LK Slider */
-.lk-slider-wrapper { padding: 12px 0 4px; overflow: hidden; }
+.lk-slider-wrapper { padding: 12px 0; overflow: hidden; }
 
 .lk-slider-track {
   display: flex;
@@ -1865,7 +1865,7 @@ input, textarea, select {
 .lk-card {
   flex-shrink: 0;
   width: 280px;
-  height: 104px;
+  height: auto;
   background: var(--tg-bg-primary);
   border: 1.5px solid var(--tg-border-light);
   border-radius: 16px;
@@ -1876,7 +1876,6 @@ input, textarea, select {
   transition: box-shadow 0.15s, transform 0.1s;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   overflow: hidden;
 }
 .lk-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
@@ -2415,7 +2414,7 @@ input, textarea, select {
 .lk-root { max-width: 100%; }
 .lk-topbar-row { padding: 8px 12px; }
 .lk-slider-track { padding: 0 12px; }
-.lk-card { width: 240px; height: 96px; }
+.lk-card { width: 240px; height: auto; }
 .lk-section-block { padding: 8px 12px; }
 .lk-list-action-btn { font-size: 15px; }
 .lk-mobile-hidden { display: none; }
@@ -2524,7 +2523,7 @@ input, textarea, select {
 }
 
 @media (max-width: 360px) {
-  .lk-card { width: 200px; height: 90px; }
+  .lk-card { width: 200px; height: auto; }
   .lk-btn-action { font-size: 12px; padding: 0 8px; }
 }
 
