@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 /// Deserialize a datetime field that may arrive in any of these formats:
 ///   - RFC 3339 / ISO 8601 with timezone: "2026-04-25T16:52:00Z"
@@ -90,6 +91,21 @@ where
     }
 }
 
+/// Deserialize an optional UUID that may arrive as a UUID string or null/empty.
+fn deserialize_opt_uuid<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
+        Some(s) => Uuid::parse_str(&s)
+            .map(Some)
+            .map_err(|_| serde::de::Error::custom(format!("cannot parse '{}' as UUID", s))),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Category {
     pub id: i32,
@@ -107,8 +123,8 @@ pub struct Procurement {
     pub title: String,
     pub description: String,
     pub category_id: Option<i32>,
-    pub organizer_id: i32,
-    pub supplier_id: Option<i32>,
+    pub organizer_id: Uuid,
+    pub supplier_id: Option<Uuid>,
     pub city: String,
     pub delivery_address: String,
     pub target_amount: Decimal,
@@ -133,8 +149,8 @@ pub struct ProcurementResponse {
     pub title: String,
     pub description: String,
     pub category_id: Option<i32>,
-    pub organizer_id: i32,
-    pub supplier_id: Option<i32>,
+    pub organizer_id: Uuid,
+    pub supplier_id: Option<Uuid>,
     pub city: String,
     pub delivery_address: String,
     pub target_amount: Decimal,
@@ -234,7 +250,7 @@ pub struct CreateProcurement {
     pub category_id: Option<i32>,
     /// Accepts both `organizer_id` and `organizer`.
     #[serde(alias = "organizer")]
-    pub organizer_id: i32,
+    pub organizer_id: Uuid,
     pub city: String,
     pub delivery_address: Option<String>,
     pub target_amount: Decimal,
@@ -256,14 +272,14 @@ pub struct ProcurementQuery {
     pub status: Option<String>,
     pub city: Option<String>,
     pub category_id: Option<i32>,
-    pub organizer_id: Option<i32>,
+    pub organizer_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Participant {
     pub id: i32,
     pub procurement_id: i32,
-    pub user_id: i32,
+    pub user_id: Uuid,
     pub quantity: Decimal,
     pub amount: Decimal,
     pub status: String,
@@ -275,7 +291,7 @@ pub struct Participant {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct JoinProcurement {
-    pub user_id: Option<i32>,
+    pub user_id: Option<Uuid>,
     pub amount: Decimal,
     pub quantity: Option<Decimal>,
     pub notes: Option<String>,

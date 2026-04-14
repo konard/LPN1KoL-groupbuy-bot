@@ -3,10 +3,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct User {
-    pub id: i32,
+    pub id: Uuid,
     pub platform: String,
     pub platform_user_id: String,
     pub username: String,
@@ -50,7 +51,7 @@ pub struct UpdateUser {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserResponse {
-    pub id: i32,
+    pub id: Uuid,
     pub platform: String,
     pub platform_user_id: String,
     pub username: String,
@@ -137,7 +138,7 @@ pub struct SearchQuery {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct UserSession {
     pub id: i32,
-    pub user_id: i32,
+    pub user_id: Uuid,
     pub dialog_type: String,
     pub dialog_state: String,
     pub dialog_data: serde_json::Value,
@@ -148,7 +149,7 @@ pub struct UserSession {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SetSessionState {
-    pub user_id: i32,
+    pub user_id: Uuid,
     pub dialog_type: Option<String>,
     pub dialog_state: Option<String>,
     pub dialog_data: Option<serde_json::Value>,
@@ -156,5 +157,5 @@ pub struct SetSessionState {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ClearSessionRequest {
-    pub user_id: i32,
+    pub user_id: Uuid,
 }
