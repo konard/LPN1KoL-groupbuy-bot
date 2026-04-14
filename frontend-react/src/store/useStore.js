@@ -96,8 +96,9 @@ export const useStore = create((set, get) => ({
   login: async (data) => {
     set({ isLoading: true, error: null });
     try {
-      await api.loginUser({ phone: data.phone });
-      set({ isLoading: false, otpPending: { phone: data.phone, context: 'login' } });
+      const result = await api.loginUser({ phone: data.phone });
+      const maskedEmail = result?.data?.maskedEmail || result?.maskedEmail || null;
+      set({ isLoading: false, otpPending: { phone: data.phone, context: 'login', maskedEmail } });
     } catch (error) {
       set({ error: error.message, isLoading: false });
       get().addToast(error.message, 'error');
@@ -137,14 +138,15 @@ export const useStore = create((set, get) => ({
   register: async (data) => {
     set({ isLoading: true, error: null });
     try {
-      await api.registerAuthUser({
+      const result = await api.registerAuthUser({
         phone: data.phone,
         email: data.email,
         firstName: data.first_name || undefined,
         lastName: data.last_name || undefined,
         role: data.role || undefined,
       });
-      set({ isLoading: false, otpPending: { phone: data.phone, context: 'registration' } });
+      const maskedEmail = result?.data?.maskedEmail || result?.maskedEmail || data.email || null;
+      set({ isLoading: false, otpPending: { phone: data.phone, context: 'registration', maskedEmail } });
     } catch (error) {
       set({ error: error.message, isLoading: false });
       get().addToast('Ошибка регистрации: ' + error.message, 'error');
