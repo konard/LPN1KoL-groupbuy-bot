@@ -118,8 +118,13 @@ export default function ProcurementsPage({ user, onNavigate, onLogout }) {
       <div style={s.header}>
         <span>GroupBuy &mdash; <strong>{user.username}</strong></span>
         <div style={s.nav}>
-          <button style={s.navBtn(false)} onClick={() => onNavigate('chat')}>Chat</button>
+          <button style={s.navBtn(false)} onClick={() => onNavigate('dashboard')}>Dashboard</button>
           <button style={s.navBtn(true)}>Procurements</button>
+          <button style={s.navBtn(false)} onClick={() => onNavigate('chat')}>Chat</button>
+          <button style={s.navBtn(false)} onClick={() => onNavigate('invitations')}>Invitations</button>
+          <button style={s.navBtn(false)} onClick={() => onNavigate('notifications')}>Notifications</button>
+          <button style={s.navBtn(false)} onClick={() => onNavigate('complaints')}>Complaints</button>
+          <button style={s.navBtn(false)} onClick={() => onNavigate('profile')}>Profile</button>
           <button style={s.logoutBtn} onClick={onLogout}>Logout</button>
         </div>
       </div>
@@ -171,6 +176,10 @@ export default function ProcurementsPage({ user, onNavigate, onLogout }) {
                       <button style={{ ...s.btn, ...s.btnDanger, flex: 1 }} onClick={() => handleLeave(p.id)}>Leave</button>
                     </div>
                   )}
+                  <button style={{ ...s.btn, ...s.btnPrimary, width: '100%' }}
+                    onClick={() => onNavigate('procurementDetail', { procurementId: p.id })}>
+                    Details
+                  </button>
                 </div>
               )
             })}
