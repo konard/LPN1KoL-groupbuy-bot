@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-bottom:1rem">Payments ({{ payments|length }})</h2>
+
+  <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+    {% set type_colors = {'deposit': 'badge-green', 'withdrawal': 'badge-red', 'procurement_payment': 'badge-blue'} %}
+    {% set totals = namespace(deposit=0, withdrawal=0, payment=0) %}
+    {% for p in payments %}
+      {% if p.payment_type == 'deposit' %}{% set totals.deposit = totals.deposit + p.amount %}
+      {% elif p.payment_type == 'withdrawal' %}{% set totals.withdrawal = totals.withdrawal + p.amount %}
+      {% elif p.payment_type == 'procurement_payment' %}{% set totals.payment = totals.payment + p.amount %}
+      {% endif %}
+    {% endfor %}
+    <div class="card" style="border-left:4px solid #28a745;padding:1rem;margin-bottom:0;min-width:160px">
+      <div style="font-size:1.5rem;font-weight:700;color:#28a745">₽{{ "%.2f"|format(totals.deposit) }}</div>
+      <div style="font-size:.8rem;color:#666">Total Deposits</div>
+    </div>
+    <div class="card" style="border-left:4px solid #dc3545;padding:1rem;margin-bottom:0;min-width:160px">
+      <div style="font-size:1.5rem;font-weight:700;color:#dc3545">₽{{ "%.2f"|format(totals.withdrawal) }}</div>
+      <div style="font-size:.8rem;color:#666">Total Withdrawals</div>
+    </div>
+    <div class="card" style="border-left:4px solid #007bff;padding:1rem;margin-bottom:0;min-width:160px">
+      <div style="font-size:1.5rem;font-weight:700;color:#007bff">₽{{ "%.2f"|format(totals.payment) }}</div>
+      <div style="font-size:.8rem;color:#666">Procurement Payments</div>
+    </div>
+  </div>
+
+  {% if payments %}
+  <table>
+    <thead>
+      <tr><th>ID</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Description</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ p.username or p.user_id }}</td>
+        <td><span class="badge {{ type_colors.get(p.payment_type, 'badge-gray') }}">{{ p.payment_type | replace('_', ' ') | title }}</span></td>
+        <td style="font-weight:600;color:{% if p.payment_type == 'deposit' %}#28a745{% else %}#dc3545{% endif %}">
+          {% if p.payment_type == 'deposit' %}+{% else %}−{% endif %}₽{{ "%.2f"|format(p.amount) }}
+        </td>
+        <td>
+          <span class="badge {% if p.status == 'succeeded' %}badge-green{% elif p.status == 'pending' %}badge-yellow{% else %}badge-red{% endif %}">
+            {{ p.status }}
+          </span>
+        </td>
+        <td>{{ p.description or '—' }}</td>
+        <td>{{ p.created_at[:16] | replace('T', ' ') if p.created_at else '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p>No payments found.</p>
+  {% endif %}
+</div>
+{% endblock %}
