@@ -296,3 +296,116 @@ pub struct JoinProcurement {
     pub quantity: Option<Decimal>,
     pub notes: Option<String>,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LeaveProcurement {
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateProcurement {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    #[serde(
+        alias = "category",
+        deserialize_with = "deserialize_opt_int_or_str",
+        default
+    )]
+    pub category_id: Option<i32>,
+    pub city: Option<String>,
+    pub delivery_address: Option<String>,
+    pub target_amount: Option<Decimal>,
+    pub stop_at_amount: Option<Decimal>,
+    pub unit: Option<String>,
+    pub price_per_unit: Option<Decimal>,
+    pub commission_percent: Option<Decimal>,
+    pub min_quantity: Option<Decimal>,
+    #[serde(deserialize_with = "deserialize_flexible_datetime_opt", default)]
+    pub deadline: Option<DateTime<Utc>>,
+    #[serde(deserialize_with = "deserialize_flexible_datetime_opt", default)]
+    pub payment_deadline: Option<DateTime<Utc>>,
+    pub image_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateStatusRequest {
+    pub organizer_id: Uuid,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CastVoteRequest {
+    pub voter_id: Uuid,
+    pub supplier_id: Uuid,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct Vote {
+    pub id: i32,
+    pub procurement_id: i32,
+    pub voter_id: Uuid,
+    pub supplier_id: Uuid,
+    pub comment: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VoteResult {
+    pub supplier_id: Uuid,
+    pub vote_count: i64,
+    pub percentage: f64,
+    pub total_votes: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ApproveSupplierRequest {
+    pub supplier_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CheckAccessRequest {
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AddParticipantRequest {
+    pub organizer_id: Uuid,
+    pub user_id: Uuid,
+    pub quantity: Option<Decimal>,
+    pub amount: Decimal,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateParticipantStatusRequest {
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ReceiptRow {
+    pub user_id: Uuid,
+    pub quantity: Decimal,
+    pub amount: Decimal,
+    pub notes: String,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ReceiptTable {
+    pub rows: Vec<ReceiptRow>,
+    pub total_amount: Decimal,
+    pub commission_percent: Decimal,
+    pub commission_amount: Decimal,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CloseVoteRequest {
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct InviteRequest {
+    pub organizer_id: Uuid,
+    pub email: String,
+}

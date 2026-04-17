@@ -53,3 +53,25 @@ pub struct Transaction {
     pub description: String,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct PaymentQuery {
+    pub user_id: Option<Uuid>,
+    pub payment_type: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionQuery {
+    pub user_id: Option<Uuid>,
+    pub transaction_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TransactionSummary {
+    pub current_balance: Decimal,
+    pub total_deposited: Decimal,
+    pub total_withdrawn: Decimal,
+    pub total_refunded: Decimal,
+    pub transaction_count: i64,
+}

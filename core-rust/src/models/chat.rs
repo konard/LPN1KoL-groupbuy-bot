@@ -49,3 +49,23 @@ pub struct Notification {
 pub struct NotificationQuery {
     pub user_id: Option<Uuid>,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateNotification {
+    pub user_id: Uuid,
+    pub notification_type: String,
+    pub title: String,
+    pub message: String,
+    pub procurement_id: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UnreadCountQuery {
+    pub user_id: Uuid,
+    pub procurement_id: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkAllReadRequest {
+    pub user_id: Uuid,
+}

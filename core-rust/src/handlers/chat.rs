@@ -4,6 +4,83 @@ use uuid::Uuid;
 
 use crate::models::chat::*;
 
+/// GET /api/chat/messages/unread_count/
+#[utoipa::path(
+    get,
+    path = "/api/chat/messages/unread_count/",
+    tag = "chat",
+    params(
+        ("user_id" = Uuid, Query, description = "User ID"),
+        ("procurement_id" = Option<i32>, Query, description = "Filter by procurement ID")
+    ),
+    responses(
+        (status = 200, description = "Unread message count"),
+        (status = 400, description = "user_id is required")
+    )
+)]
+pub async fn unread_count(
+    pool: web::Data<PgPool>,
+    query: web::Query<UnreadCountQuery>,
+) -> HttpResponse {
+    let user_id = query.user_id;
+
+    if let Some(procurement_id) = query.procurement_id {
+        let last_read: Option<i32> = sqlx::query_scalar(
+            "SELECT last_read_message_id FROM message_reads WHERE user_id = $1 AND procurement_id = $2",
+        )
+        .bind(user_id)
+        .bind(procurement_id)
+        .fetch_optional(pool.get_ref())
+        .await
+        .unwrap_or(None)
+        .flatten();
+
+        let count: i64 = if let Some(last_id) = last_read {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM chat_messages WHERE procurement_id = $1 AND is_deleted = false AND id > $2",
+            )
+            .bind(procurement_id)
+            .bind(last_id)
+            .fetch_one(pool.get_ref())
+            .await
+            .unwrap_or(0)
+        } else {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM chat_messages WHERE procurement_id = $1 AND is_deleted = false",
+            )
+            .bind(procurement_id)
+            .fetch_one(pool.get_ref())
+            .await
+            .unwrap_or(0)
+        };
+
+        HttpResponse::Ok().json(serde_json::json!({
+            "unread_count": count,
+            "procurement_id": procurement_id
+        }))
+    } else {
+        // Aggregate across all procurements user participates in
+        let count: i64 = sqlx::query_scalar(
+            r#"SELECT COUNT(*) FROM chat_messages cm
+               WHERE cm.is_deleted = false
+               AND cm.procurement_id IN (
+                   SELECT procurement_id FROM participants WHERE user_id = $1 AND is_active = true
+               )
+               AND cm.id > COALESCE(
+                   (SELECT last_read_message_id FROM message_reads mr
+                    WHERE mr.user_id = $1 AND mr.procurement_id = cm.procurement_id),
+                   0
+               )"#,
+        )
+        .bind(user_id)
+        .fetch_one(pool.get_ref())
+        .await
+        .unwrap_or(0);
+
+        HttpResponse::Ok().json(serde_json::json!({"unread_count": count}))
+    }
+}
+
 /// GET /api/chat/messages/?procurement=...
 #[utoipa::path(
     get,
@@ -158,6 +235,66 @@ pub async fn mark_notification_read(
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({"detail": "Not found."})),
         Err(e) => {
             tracing::error!("Failed to mark notification as read: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "Database error"}))
+        }
+    }
+}
+
+/// POST /api/chat/notifications/
+#[utoipa::path(
+    post,
+    path = "/api/chat/notifications/",
+    tag = "chat",
+    request_body = CreateNotification,
+    responses(
+        (status = 201, description = "Notification created", body = Notification),
+        (status = 400, description = "Bad request")
+    )
+)]
+pub async fn create_notification(
+    pool: web::Data<PgPool>,
+    body: web::Json<CreateNotification>,
+) -> HttpResponse {
+    let data = body.into_inner();
+
+    match sqlx::query_as::<_, Notification>(
+        r#"INSERT INTO notifications (user_id, notification_type, title, message, procurement_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *"#,
+    )
+    .bind(data.user_id)
+    .bind(&data.notification_type)
+    .bind(&data.title)
+    .bind(&data.message)
+    .bind(data.procurement_id)
+    .fetch_one(pool.get_ref())
+    .await
+    {
+        Ok(notif) => HttpResponse::Created().json(notif),
+        Err(e) => {
+            tracing::error!("Failed to create notification: {}", e);
+            HttpResponse::BadRequest().json(serde_json::json!({"error": format!("{}", e)}))
+        }
+    }
+}
+
+/// POST /api/chat/notifications/mark_all_read/
+pub async fn mark_all_notifications_read(
+    pool: web::Data<PgPool>,
+    body: web::Json<MarkAllReadRequest>,
+) -> HttpResponse {
+    let user_id = body.user_id;
+
+    match sqlx::query_scalar::<_, i64>(
+        "WITH updated AS (UPDATE notifications SET is_read=true WHERE user_id=$1 AND is_read=false RETURNING id) SELECT COUNT(*) FROM updated",
+    )
+    .bind(user_id)
+    .fetch_one(pool.get_ref())
+    .await
+    {
+        Ok(count) => HttpResponse::Ok().json(serde_json::json!({"updated": count})),
+        Err(e) => {
+            tracing::error!("Failed to mark all notifications as read: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({"error": "Database error"}))
         }
     }

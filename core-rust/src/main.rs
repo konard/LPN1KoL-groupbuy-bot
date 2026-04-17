@@ -38,14 +38,38 @@ use handlers::websocket::WsState;
         handlers::procurements::list_procurements,
         handlers::procurements::create_procurement,
         handlers::procurements::get_procurement,
+        handlers::procurements::update_procurement,
+        handlers::procurements::delete_procurement,
         handlers::procurements::get_user_procurements,
         handlers::procurements::join_procurement,
         handlers::procurements::leave_procurement,
         handlers::procurements::list_categories,
+        handlers::procurements::list_participants,
+        handlers::procurements::add_participant,
+        handlers::procurements::check_access,
+        handlers::procurements::update_status,
+        handlers::procurements::cast_vote,
+        handlers::procurements::vote_results,
+        handlers::procurements::close_vote,
+        handlers::procurements::vote_close_status,
+        handlers::procurements::approve_supplier,
+        handlers::procurements::stop_amount,
+        handlers::procurements::receipt_table,
+        handlers::procurements::close_procurement,
+        handlers::procurements::invite_user,
+        handlers::procurements::update_participant_status,
+        handlers::payments::list_payments,
+        handlers::payments::get_payment,
         handlers::payments::create_payment,
         handlers::payments::get_payment_status,
+        handlers::payments::simulate_success,
+        handlers::payments::list_transactions,
+        handlers::payments::get_transaction,
+        handlers::payments::transaction_summary,
         handlers::chat::list_messages,
         handlers::chat::create_message,
+        handlers::chat::unread_count,
+        handlers::chat::create_notification,
         handlers::chat::list_notifications,
     ),
     components(
@@ -60,14 +84,31 @@ use handlers::websocket::WsState;
             models::procurement::Category,
             models::procurement::ProcurementResponse,
             models::procurement::CreateProcurement,
+            models::procurement::UpdateProcurement,
             models::procurement::Participant,
             models::procurement::JoinProcurement,
+            models::procurement::LeaveProcurement,
+            models::procurement::UpdateStatusRequest,
+            models::procurement::CastVoteRequest,
+            models::procurement::Vote,
+            models::procurement::VoteResult,
+            models::procurement::ApproveSupplierRequest,
+            models::procurement::CheckAccessRequest,
+            models::procurement::AddParticipantRequest,
+            models::procurement::UpdateParticipantStatusRequest,
+            models::procurement::ReceiptRow,
+            models::procurement::ReceiptTable,
+            models::procurement::CloseVoteRequest,
+            models::procurement::InviteRequest,
             models::payment::Payment,
             models::payment::CreatePayment,
             models::payment::PaymentStatusResponse,
+            models::payment::Transaction,
+            models::payment::TransactionSummary,
             models::chat::Message,
             models::chat::CreateMessage,
             models::chat::Notification,
+            models::chat::CreateNotification,
         )
     ),
     tags(
@@ -178,18 +219,45 @@ async fn main() -> std::io::Result<()> {
             .route("/api/procurements/", web::post().to(handlers::procurements::create_procurement))
             .route("/api/procurements/categories/", web::get().to(handlers::procurements::list_categories))
             .route("/api/procurements/user/{user_id}/", web::get().to(handlers::procurements::get_user_procurements))
+            .route("/api/procurements/participants/{id}/update_status/", web::patch().to(handlers::procurements::update_participant_status))
             .route("/api/procurements/{id}/", web::get().to(handlers::procurements::get_procurement))
+            .route("/api/procurements/{id}/", web::put().to(handlers::procurements::update_procurement))
+            .route("/api/procurements/{id}/", web::patch().to(handlers::procurements::update_procurement))
+            .route("/api/procurements/{id}/", web::delete().to(handlers::procurements::delete_procurement))
+            .route("/api/procurements/{id}/participants/", web::get().to(handlers::procurements::list_participants))
+            .route("/api/procurements/{id}/add_participant/", web::post().to(handlers::procurements::add_participant))
+            .route("/api/procurements/{id}/check_access/", web::post().to(handlers::procurements::check_access))
+            .route("/api/procurements/{id}/update_status/", web::post().to(handlers::procurements::update_status))
+            .route("/api/procurements/{id}/cast_vote/", web::post().to(handlers::procurements::cast_vote))
+            .route("/api/procurements/{id}/vote_results/", web::get().to(handlers::procurements::vote_results))
+            .route("/api/procurements/{id}/close_vote/", web::post().to(handlers::procurements::close_vote))
+            .route("/api/procurements/{id}/vote_close_status/", web::get().to(handlers::procurements::vote_close_status))
+            .route("/api/procurements/{id}/approve_supplier/", web::post().to(handlers::procurements::approve_supplier))
+            .route("/api/procurements/{id}/stop_amount/", web::post().to(handlers::procurements::stop_amount))
+            .route("/api/procurements/{id}/receipt_table/", web::get().to(handlers::procurements::receipt_table))
+            .route("/api/procurements/{id}/close/", web::post().to(handlers::procurements::close_procurement))
+            .route("/api/procurements/{id}/invite/", web::post().to(handlers::procurements::invite_user))
             .route("/api/procurements/{id}/join/", web::post().to(handlers::procurements::join_procurement))
             .route("/api/procurements/{id}/leave/", web::post().to(handlers::procurements::leave_procurement))
             // Chat endpoints
             .route("/api/chat/messages/", web::get().to(handlers::chat::list_messages))
             .route("/api/chat/messages/", web::post().to(handlers::chat::create_message))
             .route("/api/chat/messages/mark_read/", web::post().to(handlers::chat::mark_messages_read))
+            .route("/api/chat/messages/unread_count/", web::get().to(handlers::chat::unread_count))
             .route("/api/chat/notifications/", web::get().to(handlers::chat::list_notifications))
+            .route("/api/chat/notifications/", web::post().to(handlers::chat::create_notification))
+            .route("/api/chat/notifications/mark_all_read/", web::post().to(handlers::chat::mark_all_notifications_read))
             .route("/api/chat/notifications/{id}/mark_read/", web::post().to(handlers::chat::mark_notification_read))
             // Payment endpoints
+            .route("/api/payments/", web::get().to(handlers::payments::list_payments))
             .route("/api/payments/", web::post().to(handlers::payments::create_payment))
+            .route("/api/payments/transactions/summary/", web::get().to(handlers::payments::transaction_summary))
+            .route("/api/payments/transactions/", web::get().to(handlers::payments::list_transactions))
+            .route("/api/payments/transactions/{id}/", web::get().to(handlers::payments::get_transaction))
+            .route("/api/payments/webhook/", web::post().to(handlers::payments::payment_webhook))
+            .route("/api/payments/{id}/", web::get().to(handlers::payments::get_payment))
             .route("/api/payments/{id}/status/", web::get().to(handlers::payments::get_payment_status))
+            .route("/api/payments/{id}/simulate_success/", web::post().to(handlers::payments::simulate_success))
             // WebSocket endpoint
             .route("/ws/chat/", web::get().to(handlers::websocket::ws_handler))
             // Health check endpoint

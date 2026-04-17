@@ -8,7 +8,20 @@
 
 - [Обзор архитектуры](#обзор-архитектуры)
 - [Аутентификация](#аутентификация)
-- [Django Core API](#django-core-api)
+- [Rust Core API (Личный кабинет)](#rust-core-api-личный-кабинет)
+  - [Здоровье системы (Rust)](#здоровье-системы-rust)
+  - [Пользователи (Rust)](#пользователи-rust)
+  - [Сессии пользователей (Rust)](#сессии-пользователей-rust)
+  - [Закупки (Rust)](#закупки-rust)
+  - [Участники закупок (Rust)](#участники-закупок-rust)
+  - [Голосование за поставщика (Rust)](#голосование-за-поставщика-rust)
+  - [Категории (Rust)](#категории-rust)
+  - [Платежи (Rust)](#платежи-rust)
+  - [Транзакции (Rust)](#транзакции-rust)
+  - [Чат и сообщения (Rust)](#чат-и-сообщения-rust)
+  - [Уведомления (Rust)](#уведомления-rust)
+  - [WebSocket (Rust)](#websocket-rust)
+- [Django Core API (устаревший / только для бота и ML)](#django-core-api-устаревший--только-для-бота-и-ml)
   - [Здоровье системы](#здоровье-системы)
   - [Пользователи](#пользователи)
   - [Сессии пользователей](#сессии-пользователей)
@@ -46,10 +59,13 @@
 
 ## Обзор архитектуры
 
-Система состоит из двух уровней:
+Система состоит из трёх уровней:
 
-1. **Django Core** — монолитный бэкенд с REST API на базе Django REST Framework (`/api/...`)
-2. **Микросервисы** — набор независимых сервисов (NestJS, Go, FastAPI), объединённых через Gateway
+1. **Rust Core API** (`core-rust/`) — основной бэкенд сервис личного кабинета на Actix-web с PostgreSQL. Обрабатывает все запросы личного кабинета: пользователи, закупки, чат, платежи. Доступен по `/api/...` и имеет Swagger UI на `/api/docs/`.
+2. **Django Core** (`core/`) — устаревший монолитный бэкенд с DRF. Используется для **Административного API** (`/api/admin/`) и ML-аналитики. **Не используется для запросов личного кабинета** — они переведены на Rust Core API.
+3. **Микросервисы** — набор независимых сервисов (NestJS, Go, FastAPI), объединённых через Gateway.
+
+> **Разделение:** Личный кабинет (пользовательский интерфейс) работает через **Rust Core API**. Административная панель работает через **Django Admin API** (`/api/admin/`).
 
 Все запросы через Gateway направляются по префиксу пути к соответствующему микросервису.
 
@@ -57,13 +73,476 @@
 
 ## Аутентификация
 
+- **Rust Core API**: JWT-токен в заголовке `Authorization: Bearer <token>`
 - **Django Core**: JWT-токен в заголовке `Authorization: Bearer <token>`
 - **Микросервисы**: JWT-токен в заголовке `Authorization: Bearer <token>` или через заголовок `x-user-id`
 - **Webhook-эндпоинты**: без авторизации (проверяется подпись запроса)
 
 ---
 
-## Django Core API
+## Rust Core API (Личный кабинет)
+
+Основной бэкенд для личного кабинета. Базовый URL: `http://<host>:8000`
+
+Swagger UI: `http://<host>:8000/api/docs/`
+OpenAPI схема: `http://<host>:8000/api/schema/openapi.json`
+
+---
+
+### Здоровье системы (Rust)
+
+#### `GET /health/`
+
+Проверка состояния сервиса.
+
+**Авторизация**: нет
+
+**Ответ**: `OK`
+
+---
+
+### Пользователи (Rust)
+
+#### `GET /api/users/`
+
+Список всех пользователей.
+
+**Параметры запроса**:
+- `platform` (опционально) — фильтр по платформе
+- `role` (опционально) — фильтр по роли
+
+#### `POST /api/users/`
+
+Создание нового пользователя.
+
+**Тело запроса**:
+```json
+{
+  "platform": "telegram",
+  "platform_user_id": "123456",
+  "first_name": "Иван",
+  "last_name": "Иванов",
+  "username": "ivan",
+  "phone": "+79001234567",
+  "email": "ivan@example.com",
+  "role": "buyer",
+  "language_code": "ru"
+}
+```
+
+#### `GET /api/users/{id}/`
+
+Получение пользователя по ID.
+
+#### `PUT /api/users/{id}/` / `PATCH /api/users/{id}/`
+
+Обновление данных пользователя.
+
+#### `DELETE /api/users/{id}/`
+
+Удаление пользователя.
+
+#### `GET /api/users/by_platform/`
+
+Поиск пользователя по платформе.
+
+**Параметры**: `platform`, `platform_user_id`
+
+#### `GET /api/users/by_email/`
+
+Поиск по email. **Параметр**: `email`
+
+#### `GET /api/users/by_phone/`
+
+Поиск по телефону. **Параметр**: `phone`
+
+#### `GET /api/users/check_exists/`
+
+Проверка существования пользователя.
+
+#### `GET /api/users/search/`
+
+Полнотекстовый поиск пользователей (до 20 результатов).
+
+**Параметр**: `q` — строка поиска
+
+#### `GET /api/users/{id}/balance/`
+
+Баланс пользователя со статистикой.
+
+#### `POST /api/users/{id}/update_balance/`
+
+Обновление баланса.
+
+**Тело**:
+```json
+{"amount": 500.00, "operation": "add"}
+```
+
+#### `GET /api/users/{id}/role/`
+
+Роль пользователя.
+
+#### `GET /api/users/{id}/ws_token/`
+
+Генерация JWT-токена для WebSocket (TTL 24 часа).
+
+---
+
+### Сессии пользователей (Rust)
+
+#### `POST /api/users/sessions/set_state/`
+
+Установка состояния диалога.
+
+**Тело**:
+```json
+{"user_id": "uuid", "platform": "telegram", "state": "waiting_for_amount", "data": {}}
+```
+
+#### `POST /api/users/sessions/clear_state/`
+
+Сброс состояния диалога.
+
+---
+
+### Закупки (Rust)
+
+#### `GET /api/procurements/`
+
+Список закупок.
+
+**Параметры**: `status`, `city`
+
+#### `POST /api/procurements/`
+
+Создание закупки.
+
+**Тело**:
+```json
+{
+  "title": "Закупка",
+  "description": "Описание",
+  "organizer_id": "uuid",
+  "city": "Москва",
+  "target_amount": "100000.00",
+  "deadline": "2026-06-01T00:00:00Z",
+  "commission_percent": "5.00"
+}
+```
+
+#### `GET /api/procurements/{id}/`
+
+Детали закупки.
+
+#### `PUT /api/procurements/{id}/` / `PATCH /api/procurements/{id}/`
+
+Обновление закупки (только организатор).
+
+#### `DELETE /api/procurements/{id}/`
+
+Удаление закупки.
+
+#### `GET /api/procurements/user/{user_id}/`
+
+Закупки пользователя (организованные + участие).
+
+**Ответ**:
+```json
+{"organized": [...], "participating": [...]}
+```
+
+#### `POST /api/procurements/{id}/join/`
+
+Вступить в закупку.
+
+**Тело**:
+```json
+{"user_id": "uuid", "amount": "5000.00", "quantity": "2", "notes": ""}
+```
+
+#### `POST /api/procurements/{id}/leave/`
+
+Покинуть закупку.
+
+**Тело**:
+```json
+{"user_id": "uuid"}
+```
+
+#### `POST /api/procurements/{id}/check_access/`
+
+Проверить доступ пользователя к чату закупки.
+
+**Тело**: `{"user_id": "uuid"}`
+
+**Ответ**:
+```json
+{"has_access": true, "is_organizer": false, "is_participant": true}
+```
+
+#### `POST /api/procurements/{id}/update_status/`
+
+Смена статуса закупки (только организатор).
+
+**Тело**:
+```json
+{"organizer_id": "uuid", "status": "active"}
+```
+
+Допустимые статусы: `draft`, `active`, `stopped`, `payment`, `completed`, `cancelled`
+
+#### `POST /api/procurements/{id}/stop_amount/`
+
+Организатор останавливает приём новых участников (переводит в статус `stopped`).
+
+#### `POST /api/procurements/{id}/approve_supplier/`
+
+Организатор утверждает поставщика (переводит в статус `payment`).
+
+**Тело**: `{"supplier_id": "uuid"}`
+
+#### `GET /api/procurements/{id}/receipt_table/`
+
+Таблица для отправки поставщику (участники со статусом `confirmed`/`paid`).
+
+**Ответ**:
+```json
+{
+  "rows": [{"user_id": "uuid", "quantity": "2", "amount": "5000.00", "notes": "", "status": "confirmed"}],
+  "total_amount": "5000.00",
+  "commission_percent": "5.00",
+  "commission_amount": "250.00"
+}
+```
+
+#### `POST /api/procurements/{id}/close/`
+
+Организатор закрывает завершённую закупку (переводит в `completed`).
+
+#### `POST /api/procurements/{id}/invite/`
+
+Организатор отправляет приглашение по email.
+
+**Тело**: `{"organizer_id": "uuid", "email": "user@example.com"}`
+
+---
+
+### Участники закупок (Rust)
+
+#### `GET /api/procurements/{id}/participants/`
+
+Список активных участников закупки.
+
+#### `POST /api/procurements/{id}/add_participant/`
+
+Организатор добавляет участника вручную.
+
+**Тело**:
+```json
+{"organizer_id": "uuid", "user_id": "uuid", "amount": "5000.00", "quantity": "2", "notes": ""}
+```
+
+#### `PATCH /api/procurements/participants/{id}/update_status/`
+
+Обновление статуса участника.
+
+**Тело**: `{"status": "confirmed"}`
+
+Допустимые статусы: `pending`, `confirmed`, `paid`, `completed`, `cancelled`
+
+---
+
+### Голосование за поставщика (Rust)
+
+#### `POST /api/procurements/{id}/cast_vote/`
+
+Голосование за поставщика (один голос на закупку, можно изменить).
+
+**Тело**:
+```json
+{"voter_id": "uuid", "supplier_id": "uuid", "comment": "Хороший поставщик"}
+```
+
+#### `GET /api/procurements/{id}/vote_results/`
+
+Результаты голосования.
+
+**Ответ**:
+```json
+{
+  "results": [{"supplier_id": "uuid", "vote_count": 5, "percentage": 62.5, "total_votes": 8}],
+  "total_votes": 8
+}
+```
+
+#### `POST /api/procurements/{id}/close_vote/`
+
+Подтверждение участника о закрытии голосования.
+
+**Тело**: `{"user_id": "uuid"}`
+
+**Ответ**: `{"confirmed": 3, "total": 5, "user_id": "uuid"}`
+
+#### `GET /api/procurements/{id}/vote_close_status/`
+
+Статус закрытия голосования.
+
+**Ответ**: `{"confirmed_users": ["uuid1", "uuid2"], "confirmed": 2, "total": 5}`
+
+---
+
+### Категории (Rust)
+
+#### `GET /api/procurements/categories/`
+
+Список активных категорий.
+
+---
+
+### Платежи (Rust)
+
+#### `GET /api/payments/`
+
+Список платежей.
+
+**Параметры**: `user_id`, `payment_type`, `status`
+
+#### `POST /api/payments/`
+
+Создание платежа (депозит).
+
+**Тело**:
+```json
+{"user_id": "uuid", "payment_type": "deposit", "amount": "1000.00", "description": "Пополнение"}
+```
+
+#### `GET /api/payments/{id}/`
+
+Детали платежа.
+
+#### `GET /api/payments/{id}/status/`
+
+Статус платежа.
+
+#### `POST /api/payments/{id}/simulate_success/`
+
+Симуляция успешного платежа (для разработки/тестирования).
+
+#### `POST /api/payments/webhook/`
+
+Webhook от платёжного провайдера (Tochka или YooKassa, определяется автоматически).
+
+---
+
+### Транзакции (Rust)
+
+#### `GET /api/payments/transactions/`
+
+История транзакций.
+
+**Параметры**: `user_id`, `transaction_type`
+
+Типы: `deposit`, `withdrawal`, `procurement_join`, `refund`
+
+#### `GET /api/payments/transactions/{id}/`
+
+Детали транзакции.
+
+#### `GET /api/payments/transactions/summary/`
+
+Сводка транзакций пользователя.
+
+**Параметр**: `user_id`
+
+**Ответ**:
+```json
+{
+  "current_balance": "4750.00",
+  "total_deposited": "5000.00",
+  "total_withdrawn": "0.00",
+  "total_refunded": "0.00",
+  "transaction_count": 2
+}
+```
+
+---
+
+### Чат и сообщения (Rust)
+
+#### `GET /api/chat/messages/`
+
+Список сообщений.
+
+**Параметры**: `procurement` (ID закупки), `user`
+
+#### `POST /api/chat/messages/`
+
+Отправить сообщение.
+
+**Тело**:
+```json
+{"procurement": 1, "user": "uuid", "text": "Привет!", "message_type": "text"}
+```
+
+#### `POST /api/chat/messages/mark_read/`
+
+Пометить сообщения как прочитанные.
+
+**Тело**: `{"user_id": "uuid", "procurement_id": 1}`
+
+#### `GET /api/chat/messages/unread_count/`
+
+Количество непрочитанных сообщений.
+
+**Параметры**: `user_id` (обязательный), `procurement_id` (опционально)
+
+**Ответ**: `{"unread_count": 5}` или `{"unread_count": 3, "procurement_id": 1}`
+
+---
+
+### Уведомления (Rust)
+
+#### `GET /api/chat/notifications/`
+
+Список уведомлений.
+
+**Параметр**: `user_id`
+
+#### `POST /api/chat/notifications/`
+
+Создать уведомление.
+
+**Тело**:
+```json
+{"user_id": "uuid", "notification_type": "info", "title": "Заголовок", "message": "Текст", "procurement_id": 1}
+```
+
+#### `POST /api/chat/notifications/mark_all_read/`
+
+Пометить все уведомления пользователя как прочитанные.
+
+**Тело**: `{"user_id": "uuid"}`
+
+**Ответ**: `{"updated": 5}`
+
+#### `POST /api/chat/notifications/{id}/mark_read/`
+
+Пометить одно уведомление как прочитанное.
+
+---
+
+### WebSocket (Rust)
+
+#### `WS /ws/chat/`
+
+WebSocket соединение для чата в реальном времени. Требует токен из `GET /api/users/{id}/ws_token/`.
+
+---
+
+## Django Core API (устаревший / только для бота и ML)
+
+> **Примечание:** Запросы личного кабинета переведены на **Rust Core API**. Django Core API используется только для Административного API и ML-аналитики.
 
 Базовый URL: `http://<host>:<port>`
 
