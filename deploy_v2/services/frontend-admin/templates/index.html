@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-bottom:1rem">System Status</h2>
+  <p>Backend: <span class="badge {% if health.status == 'ok' %}badge-green{% else %}badge-red{% endif %}">{{ health.status or 'unknown' }}</span>
+     &nbsp; Database: <span class="badge {% if health.database == 'ok' %}badge-green{% else %}badge-red{% endif %}">{{ health.database or 'unknown' }}</span>
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">Users ({{ users|length }})</h2>
+  {% if users %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Username</th><th>Email</th><th>Status</th><th>Admin</th><th>Created</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ u.email }}</td>
+        <td>
+          <span class="badge {% if u.is_active %}badge-green{% else %}badge-red{% endif %}">
+            {{ 'Active' if u.is_active else 'Disabled' }}
+          </span>
+        </td>
+        <td>{{ 'Yes' if u.is_admin else 'No' }}</td>
+        <td>{{ u.created_at[:10] }}</td>
+        <td>
+          <form method="post" action="/users/{{ u.id }}/toggle-active">
+            <button type="submit" class="btn btn-warn">Toggle Active</button>
+          </form>
+          &nbsp;
+          <form method="post" action="/users/{{ u.id }}/delete" onsubmit="return confirm('Delete user?')">
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p>No users found.</p>
+  {% endif %}
+</div>
+{% endblock %}
