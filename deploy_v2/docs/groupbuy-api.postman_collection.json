@@ -1,0 +1,885 @@
+{
+  "info": {
+    "name": "GroupBuy API v2",
+    "_postman_id": "groupbuy-api-v2",
+    "description": "GroupBuy Backend API v2.0 — group purchasing management platform.\n\n**Auth flow (phone-based)**:\n1. POST /auth/register — create account (username, phone, email, password)\n2. POST /auth/login — provide phone + password → OTP code sent to email\n3. POST /auth/verify-code — provide phone + code → receive Bearer token\n4. Use `Authorization: Bearer {{token}}` on subsequent requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://localhost:8000", "type": "string"},
+    {"key": "token", "value": "", "type": "string"},
+    {"key": "phone", "value": "+79991234567", "type": "string"},
+    {"key": "user_id", "value": "1", "type": "string"},
+    {"key": "proc_id", "value": "1", "type": "string"},
+    {"key": "cat_id", "value": "1", "type": "string"},
+    {"key": "pay_id", "value": "1", "type": "string"},
+    {"key": "room", "value": "general", "type": "string"},
+    {"key": "inv_id", "value": "1", "type": "string"},
+    {"key": "notif_id", "value": "1", "type": "string"},
+    {"key": "complaint_id", "value": "1", "type": "string"},
+    {"key": "review_id", "value": "1", "type": "string"}
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/auth/register", "host": ["{{base_url}}"], "path": ["auth", "register"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"phone\": \"+79991234567\",\n  \"email\": \"testuser@example.com\",\n  \"password\": \"SecretPass123\"\n}"
+            },
+            "description": "Register a new user. Returns user info. Phone and email must be unique."
+          }
+        },
+        {
+          "name": "Login (Step 1 — request code)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.email_hint) {",
+                  "  pm.collectionVariables.set('phone', pm.request.body.raw ? JSON.parse(pm.request.body.raw).phone : '');",
+                  "  console.log('Code sent to', json.email_hint);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"password\": \"SecretPass123\"\n}"
+            },
+            "description": "Step 1: Send phone + password. A 6-digit OTP code is sent to the user's registered email. Responds with email_hint showing masked email address."
+          }
+        },
+        {
+          "name": "Verify Code (Step 2 — get token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('token', json.access_token);",
+                  "  console.log('Token saved to collection variable');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/auth/verify-code", "host": ["{{base_url}}"], "path": ["auth", "verify-code"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"123456\"\n}"
+            },
+            "description": "Step 2: Submit phone + 6-digit code received by email. Returns Bearer JWT token. Save token to {{token}} variable."
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{base_url}}/auth/me", "host": ["{{base_url}}"], "path": ["auth", "me"]},
+            "description": "Returns the authenticated user's profile."
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/auth/change-password", "host": ["{{base_url}}"], "path": ["auth", "change-password"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"old_password\": \"SecretPass123\",\n  \"new_password\": \"NewPass456\"\n}"
+            },
+            "description": "Change own password."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users (admin)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users?skip=0&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["users"],
+              "query": [
+                {"key": "skip", "value": "0"},
+                {"key": "limit", "value": "50"}
+              ]
+            },
+            "description": "Admin only. Returns paginated user list."
+          }
+        },
+        {
+          "name": "Search Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users/search?q=&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "search"],
+              "query": [
+                {"key": "q", "value": "", "description": "Username or email substring"},
+                {"key": "limit", "value": "20"}
+              ]
+            },
+            "description": "Search users by username or email substring. Available to any authenticated user."
+          }
+        },
+        {
+          "name": "Get User by Email (admin)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users/by-email/testuser@example.com",
+              "host": ["{{base_url}}"],
+              "path": ["users", "by-email", "testuser@example.com"]
+            },
+            "description": "Admin only. Find user by exact email address."
+          }
+        },
+        {
+          "name": "Get User by ID (admin)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            },
+            "description": "Admin only. Returns user details."
+          }
+        },
+        {
+          "name": "Update User (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": true\n}"
+            },
+            "description": "Admin only. Update username, email, or is_active status."
+          }
+        },
+        {
+          "name": "Delete User (admin)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            },
+            "description": "Admin only. Permanently delete user."
+          }
+        },
+        {
+          "name": "Get User Balance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/balance",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "balance"]
+            },
+            "description": "Get a user's current balance. Own balance or admin."
+          }
+        },
+        {
+          "name": "Adjust User Balance (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/balance",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "balance"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00\n}"
+            },
+            "description": "Admin only. Add (positive) or subtract (negative) amount from user balance."
+          }
+        },
+        {
+          "name": "Get User Reviews",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/reviews",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "reviews"]
+            },
+            "description": "Get all reviews received by this user."
+          }
+        },
+        {
+          "name": "Get User Rating",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/rating",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "rating"]
+            },
+            "description": "Returns average rating and review count for a user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{base_url}}/categories", "host": ["{{base_url}}"], "path": ["categories"]},
+            "description": "List all active categories. Public endpoint."
+          }
+        },
+        {
+          "name": "Create Category (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/categories", "host": ["{{base_url}}"], "path": ["categories"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Electronics\",\n  \"description\": \"Electronic goods\",\n  \"icon\": \"💻\"\n}"
+            },
+            "description": "Admin only. Create a new category."
+          }
+        },
+        {
+          "name": "Delete Category (admin)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/categories/{{cat_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["categories", "{{cat_id}}"]
+            },
+            "description": "Admin only. Soft-delete (deactivate) a category."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Procurements",
+      "item": [
+        {
+          "name": "List Procurements",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/procurements?status=active&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["procurements"],
+              "query": [
+                {"key": "status", "value": "active", "description": "draft|active|stopped|payment|completed|cancelled"},
+                {"key": "city", "value": null, "disabled": true},
+                {"key": "category_id", "value": null, "disabled": true},
+                {"key": "skip", "value": "0"},
+                {"key": "limit", "value": "50"}
+              ]
+            },
+            "description": "List procurements with optional filters."
+          }
+        },
+        {
+          "name": "Create Procurement",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/procurements", "host": ["{{base_url}}"], "path": ["procurements"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Group buy iPhone 15\",\n  \"description\": \"Bulk purchase for iPhone 15\",\n  \"category_id\": 1,\n  \"city\": \"Moscow\",\n  \"target_amount\": 10.0,\n  \"unit\": \"units\",\n  \"price_per_unit\": 80000.00,\n  \"commission_percent\": 2.5,\n  \"deadline\": \"2026-06-01T00:00:00Z\"\n}"
+            },
+            "description": "Create a new procurement. Authenticated user becomes organizer."
+          }
+        },
+        {
+          "name": "Get Procurement",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}"]
+            },
+            "description": "Get procurement details by ID."
+          }
+        },
+        {
+          "name": "Update Procurement",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}"
+            },
+            "description": "Update procurement. Organizer or admin only."
+          }
+        },
+        {
+          "name": "Delete Procurement",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}"]
+            },
+            "description": "Delete procurement. Organizer or admin only."
+          }
+        },
+        {
+          "name": "Join Procurement",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/join",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "join"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1.0\n}"
+            },
+            "description": "Join an active procurement as participant."
+          }
+        },
+        {
+          "name": "Leave Procurement",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/leave",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "leave"]
+            },
+            "description": "Leave a procurement you have joined."
+          }
+        },
+        {
+          "name": "List Participants",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/participants",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "participants"]
+            },
+            "description": "List all participants of a procurement."
+          }
+        },
+        {
+          "name": "Get Receipt",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/receipt",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "receipt"]
+            },
+            "description": "Get procurement receipt with totals, commission breakdown, and per-participant amounts."
+          }
+        },
+        {
+          "name": "Set Stop Amount",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/stop-amount",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "stop-amount"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stop_at_amount\": 50.0\n}"
+            },
+            "description": "Set stop-at amount — procurement auto-stops when reached."
+          }
+        },
+        {
+          "name": "Approve Supplier",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/approve-supplier",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "approve-supplier"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": 5,\n  \"price_per_unit\": 75000.00\n}"
+            },
+            "description": "Organizer approves a supplier and sets final price per unit."
+          }
+        },
+        {
+          "name": "Close Procurement",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/close",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "close"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"complete\"\n}"
+            },
+            "description": "Close procurement with action: complete or cancel."
+          }
+        },
+        {
+          "name": "Toggle Featured (admin)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/toggle-featured",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "toggle-featured"]
+            },
+            "description": "Admin only. Toggle featured status of a procurement."
+          }
+        },
+        {
+          "name": "Search Procurements",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/search/procurements?q=iphone",
+              "host": ["{{base_url}}"],
+              "path": ["search", "procurements"],
+              "query": [{"key": "q", "value": "iphone"}]
+            },
+            "description": "Full-text search in procurement titles and descriptions."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Voting & Invitations",
+      "item": [
+        {
+          "name": "Cast Vote",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/votes",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "votes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"option\": \"supplier_42\"\n}"
+            },
+            "description": "Cast a vote on a procurement option (supplier, yes/no, etc.). Participants and organizer only."
+          }
+        },
+        {
+          "name": "Get Vote Results",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/votes",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "votes"]
+            },
+            "description": "Get vote tallies and winner for a procurement."
+          }
+        },
+        {
+          "name": "Invite User",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/procurements/{{proc_id}}/invitations",
+              "host": ["{{base_url}}"],
+              "path": ["procurements", "{{proc_id}}", "invitations"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invitee_id\": 7\n}"
+            },
+            "description": "Invite another user to join the procurement."
+          }
+        },
+        {
+          "name": "List My Invitations",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{base_url}}/invitations", "host": ["{{base_url}}"], "path": ["invitations"]},
+            "description": "List invitations sent to the authenticated user."
+          }
+        },
+        {
+          "name": "Respond to Invitation",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/invitations/{{inv_id}}/respond",
+              "host": ["{{base_url}}"],
+              "path": ["invitations", "{{inv_id}}", "respond"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"accept\"\n}"
+            },
+            "description": "Accept or decline an invitation. action: accept | decline"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "List Payments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/payments?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["payments"],
+              "query": [
+                {"key": "skip", "value": "0"},
+                {"key": "limit", "value": "50"}
+              ]
+            },
+            "description": "List own payments. Admin sees all payments."
+          }
+        },
+        {
+          "name": "Create Payment",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/payments", "host": ["{{base_url}}"], "path": ["payments"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_type\": \"deposit\",\n  \"amount\": 5000.00,\n  \"description\": \"Top up balance\"\n}"
+            },
+            "description": "Create a payment. payment_type: deposit | withdrawal | procurement_payment"
+          }
+        },
+        {
+          "name": "Get Payment",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/payments/{{pay_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "{{pay_id}}"]
+            },
+            "description": "Get payment details by ID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Get Room Messages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/chat/{{room}}/messages?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "{{room}}", "messages"],
+              "query": [{"key": "limit", "value": "50"}]
+            },
+            "description": "Get message history for a chat room. room can be: general, sales, support, or procurement_{id}"
+          }
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/chat/{{room}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "{{room}}", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello from Postman!\"\n}"
+            },
+            "description": "Send a message to a chat room via REST (also published to WebSocket)."
+          }
+        },
+        {
+          "name": "Mark Room as Read",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/chat/{{room}}/mark-read",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "{{room}}", "mark-read"]
+            },
+            "description": "Mark all messages in a room as read by current user."
+          }
+        },
+        {
+          "name": "Get Unread Count",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/chat/{{room}}/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "{{room}}", "unread-count"]
+            },
+            "description": "Get number of unread messages in a room for current user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/notifications?unread_only=false",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [{"key": "unread_only", "value": "false"}]
+            },
+            "description": "List notifications for current user."
+          }
+        },
+        {
+          "name": "Get Unread Count",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/notifications/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "unread-count"]
+            },
+            "description": "Get number of unread notifications."
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/notifications/{{notif_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "{{notif_id}}", "read"]
+            },
+            "description": "Mark a single notification as read."
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/notifications/mark-all-read",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "mark-all-read"]
+            },
+            "description": "Mark all notifications as read for current user."
+          }
+        },
+        {
+          "name": "Create Notification (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/notifications", "host": ["{{base_url}}"], "path": ["notifications"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 5,\n  \"kind\": \"system\",\n  \"title\": \"Important update\",\n  \"body\": \"Please check your profile.\"\n}"
+            },
+            "description": "Admin only. Send a targeted notification to a user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reviews & Complaints",
+      "item": [
+        {
+          "name": "Create Review",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/reviews", "host": ["{{base_url}}"], "path": ["reviews"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": 3,\n  \"procurement_id\": 1,\n  \"rating\": 5,\n  \"body\": \"Great organizer, fast delivery!\"\n}"
+            },
+            "description": "Create a review (1–5 rating) for another user, optionally linked to a procurement."
+          }
+        },
+        {
+          "name": "Create Complaint",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/complaints", "host": ["{{base_url}}"], "path": ["complaints"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": 3,\n  \"procurement_id\": 1,\n  \"subject\": \"Payment issue\",\n  \"body\": \"Did not receive refund after cancellation.\"\n}"
+            },
+            "description": "File a complaint against a user or procurement."
+          }
+        },
+        {
+          "name": "List Complaints",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/complaints?status=open",
+              "host": ["{{base_url}}"],
+              "path": ["complaints"],
+              "query": [{"key": "status", "value": "open", "description": "open|in_review|resolved|rejected"}]
+            },
+            "description": "List complaints. Own complaints unless admin (sees all)."
+          }
+        },
+        {
+          "name": "Update Complaint (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{base_url}}/complaints/{{complaint_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "{{complaint_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"resolved\",\n  \"resolution\": \"Refund issued.\"\n}"
+            },
+            "description": "Admin only. Update complaint status and resolution."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Stats",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{base_url}}/admin/stats", "host": ["{{base_url}}"], "path": ["admin", "stats"]},
+            "description": "Admin only. Quick stats: total users, active procurements, total payments, total deposits."
+          }
+        },
+        {
+          "name": "Analytics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/admin/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "analytics"]
+            },
+            "description": "Admin only. 30-day analytics: new users, new procurements, status breakdown, payments by type, top cities, top participants."
+          }
+        },
+        {
+          "name": "Broadcast Notification",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/admin/broadcast", "host": ["{{base_url}}"], "path": ["admin", "broadcast"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Platform maintenance\",\n  \"body\": \"The platform will be unavailable on Sunday 3:00–5:00 AM.\",\n  \"link\": \"\",\n  \"kind\": \"system\"\n}"
+            },
+            "description": "Admin only. Send a notification to all active users. Returns count of notifications sent."
+          }
+        },
+        {
+          "name": "Activity Log",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/admin/activity-log?limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "activity-log"],
+              "query": [{"key": "limit", "value": "100", "description": "Max 500"}]
+            },
+            "description": "Admin only. Recent system activity log."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "url": {"raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"]},
+            "description": "Check backend and database connectivity. No authentication required."
+          }
+        }
+      ]
+    }
+  ]
+}

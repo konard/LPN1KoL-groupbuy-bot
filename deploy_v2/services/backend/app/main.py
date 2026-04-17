@@ -3,10 +3,14 @@ import os
 import jwt
 import hashlib
 import secrets
+import smtplib
+import random
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 from contextlib import asynccontextmanager
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Depends, HTTPException, status, Query
@@ -27,6 +31,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+# ── Email/SMTP Config ────────────────────────────────────────────────────────
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+LOGIN_CODE_EXPIRE_MINUTES = int(os.getenv("LOGIN_CODE_EXPIRE_MINUTES", "10"))
+
 # ── Database ─────────────────────────────────────────────────────────────────
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
@@ -43,12 +55,26 @@ class UserModel(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
+    phone = Column(String(20), unique=True, index=True, nullable=False)
     email = Column(String(128), unique=True, index=True, nullable=False)
     hashed_password = Column(String(128), nullable=False)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     balance = Column(Numeric(12, 2), default=Decimal("0.00"))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class LoginCodeModel(Base):
+    """One-time login codes sent to user email after phone-based login attempt."""
+    __tablename__ = "login_codes"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    code = Column(String(6), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("UserModel", foreign_keys=[user_id])
 
 
 class CategoryModel(Base):
@@ -255,6 +281,7 @@ def _ensure_column(table: str, column: str, col_ddl: str):
 
 if DATABASE_URL.startswith("sqlite"):
     _ensure_column("chat_messages", "read_by", "read_by TEXT DEFAULT ''")
+    _ensure_column("users", "phone", "phone TEXT NOT NULL DEFAULT ''")
 
 
 def get_db():
@@ -323,16 +350,63 @@ async def publish_event(channel: str, event: dict):
             pass
 
 
+# ── Email helper ──────────────────────────────────────────────────────────────
+def send_login_code_email(to_email: str, code: str) -> bool:
+    """Send a one-time login code to the user's registered email address."""
+    if not SMTP_USER or not SMTP_PASSWORD:
+        # In development without SMTP configured, print the code to stdout
+        print(f"[DEV] Login code for {to_email}: {code}")
+        return True
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Ваш код входа в GroupBuy"
+        msg["From"] = SMTP_FROM
+        msg["To"] = to_email
+
+        text_body = f"Ваш код для входа: {code}\nКод действителен {LOGIN_CODE_EXPIRE_MINUTES} минут."
+        html_body = (
+            f"<p>Ваш код для входа в <b>GroupBuy</b>:</p>"
+            f"<h2 style='letter-spacing:4px'>{code}</h2>"
+            f"<p>Код действителен {LOGIN_CODE_EXPIRE_MINUTES} минут.</p>"
+        )
+        msg.attach(MIMEText(text_body, "plain"))
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to send login code email: {e}")
+        return False
+
+
+def _mask_email(email: str) -> str:
+    """Return partially masked email for the API hint, e.g. u***@example.com."""
+    parts = email.split("@", 1)
+    if len(parts) != 2:
+        return "***"
+    local, domain = parts
+    if len(local) <= 2:
+        masked_local = "*" * len(local)
+    else:
+        masked_local = local[0] + "*" * (len(local) - 2) + local[-1]
+    return f"{masked_local}@{domain}"
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
     username: str
+    phone: str
     email: EmailStr
     password: str
 
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
+    phone: Optional[str] = None
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
 
@@ -340,6 +414,7 @@ class UserUpdate(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    phone: str
     email: str
     is_active: bool
     is_admin: bool
@@ -351,13 +426,23 @@ class UserOut(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
+    phone: str
     password: str
+
+
+class LoginCodeVerify(BaseModel):
+    phone: str
+    code: str
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class LoginCodeResponse(BaseModel):
+    detail: str
+    email_hint: str
 
 
 class CategoryCreate(BaseModel):
@@ -527,12 +612,17 @@ app.add_middleware(
 # ── Auth endpoints ────────────────────────────────────────────────────────────
 @app.post("/auth/register", response_model=UserOut, status_code=201)
 def register(data: UserCreate, db: Session = Depends(get_db)):
-    if db.query(UserModel).filter(
-        (UserModel.username == data.username) | (UserModel.email == data.email)
-    ).first():
-        raise HTTPException(status_code=400, detail="Username or email already taken")
+    """Register a new user. Requires username, phone number, email, and password."""
+    conflict = db.query(UserModel).filter(
+        (UserModel.username == data.username)
+        | (UserModel.email == data.email)
+        | (UserModel.phone == data.phone)
+    ).first()
+    if conflict:
+        raise HTTPException(status_code=400, detail="Username, phone, or email already taken")
     user = UserModel(
         username=data.username,
+        phone=data.phone,
         email=data.email,
         hashed_password=hash_password(data.password),
     )
@@ -542,13 +632,71 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
     return _user_out(user)
 
 
-@app.post("/auth/login", response_model=TokenResponse)
+@app.post("/auth/login", response_model=LoginCodeResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(UserModel).filter(UserModel.username == data.username).first()
+    """
+    Step 1 of phone-based login.
+
+    Validates phone + password. On success, generates a one-time 6-digit code
+    and sends it to the email address the user provided at registration.
+    The client must then call POST /auth/verify-code with the phone and code
+    to receive the Bearer token.
+    """
+    user = db.query(UserModel).filter(UserModel.phone == data.phone).first()
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
+
+    # Invalidate any previous unused codes for this user
+    db.query(LoginCodeModel).filter(
+        LoginCodeModel.user_id == user.id,
+        LoginCodeModel.used.is_(False),
+    ).update({"used": True})
+
+    code = f"{random.randint(0, 999999):06d}"
+    login_code = LoginCodeModel(
+        user_id=user.id,
+        code=code,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=LOGIN_CODE_EXPIRE_MINUTES),
+    )
+    db.add(login_code)
+    db.commit()
+
+    send_login_code_email(user.email, code)
+
+    return {
+        "detail": "Verification code sent to your registered email",
+        "email_hint": _mask_email(user.email),
+    }
+
+
+@app.post("/auth/verify-code", response_model=TokenResponse)
+def verify_code(data: LoginCodeVerify, db: Session = Depends(get_db)):
+    """
+    Step 2 of phone-based login.
+
+    Validates the one-time code sent to the user's email after POST /auth/login.
+    Returns a Bearer JWT token on success.
+    """
+    user = db.query(UserModel).filter(UserModel.phone == data.phone).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid phone or code")
+
+    now = datetime.now(timezone.utc)
+    login_code = db.query(LoginCodeModel).filter(
+        LoginCodeModel.user_id == user.id,
+        LoginCodeModel.code == data.code,
+        LoginCodeModel.used.is_(False),
+        LoginCodeModel.expires_at > now,
+    ).first()
+
+    if not login_code:
+        raise HTTPException(status_code=401, detail="Invalid or expired verification code")
+
+    login_code.used = True
+    db.commit()
+
     token = create_token({"sub": str(user.id)})
     return {"access_token": token}
 
@@ -1803,6 +1951,7 @@ def _user_out(u: UserModel) -> dict:
     return {
         "id": u.id,
         "username": u.username,
+        "phone": u.phone or "",
         "email": u.email,
         "is_active": u.is_active,
         "is_admin": u.is_admin,
