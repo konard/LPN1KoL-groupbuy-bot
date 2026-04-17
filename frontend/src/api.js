@@ -24,6 +24,24 @@ export const api = {
   register: (username, email, password) => request('POST', '/auth/register', { username, email, password }),
   me: () => request('GET', '/auth/me'),
   health: () => request('GET', '/health'),
+
+  // Procurements
+  listProcurements: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request('GET', `/procurements${qs ? '?' + qs : ''}`)
+  },
+  getProcurement: (id) => request('GET', `/procurements/${id}`),
+  createProcurement: (data) => request('POST', '/procurements', data),
+  updateProcurement: (id, data) => request('PATCH', `/procurements/${id}`, data),
+  joinProcurement: (id, quantity) => request('POST', `/procurements/${id}/join`, { quantity }),
+  leaveProcurement: (id) => request('DELETE', `/procurements/${id}/leave`),
+
+  // Payments
+  listPayments: () => request('GET', '/payments'),
+  createPayment: (data) => request('POST', '/payments', data),
+
+  // Chat history
+  getRoomHistory: (room) => request('GET', `/chat/${room}/messages`),
 }
 
 export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'ws://localhost:8001'
