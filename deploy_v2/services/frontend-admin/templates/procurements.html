@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GroupBuy Admin — Procurements</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; }
+    header { background: #1a1a2e; color: #fff; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+    header a { color: #a8d8ea; text-decoration: none; margin-left: 1rem; }
+    main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+    .card { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.08); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid #eee; font-size: .9rem; }
+    th { background: #f9f9f9; font-weight: 600; }
+    .badge { display: inline-block; padding: .2rem .5rem; border-radius: 4px; font-size: .8rem; font-weight: 600; }
+    .badge-green { background: #d4edda; color: #155724; }
+    .badge-blue { background: #cce5ff; color: #004085; }
+    .badge-yellow { background: #fff3cd; color: #856404; }
+    .badge-red { background: #f8d7da; color: #721c24; }
+    .badge-gray { background: #e2e3e5; color: #383d41; }
+    .btn { display: inline-block; padding: .3rem .8rem; border: none; border-radius: 4px; cursor: pointer; font-size: .85rem; text-decoration: none; }
+    .btn-danger { background: #dc3545; color: #fff; }
+    .btn-primary { background: #007bff; color: #fff; }
+    .btn-warn { background: #ffc107; color: #333; }
+    form { display: inline; }
+    select { padding: .25rem .5rem; border: 1px solid #ccc; border-radius: 4px; font-size: .85rem; }
+    .progress { background: #e9ecef; border-radius: 4px; height: 8px; width: 120px; display: inline-block; vertical-align: middle; }
+    .progress-bar { background: #007bff; height: 100%; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>GroupBuy Admin</strong>
+    <div>
+      <a href="/">Users</a>
+      <a href="/procurements">Procurements</a>
+      <a href="/logout">Logout</a>
+    </div>
+  </header>
+  <main>
+    <div class="card">
+      <h2 style="margin-bottom:1rem">Procurements ({{ procurements|length }})</h2>
+      {% if procurements %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Title</th><th>Organizer</th><th>Status</th>
+            <th>Progress</th><th>City</th><th>Deadline</th><th>Participants</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in procurements %}
+          {% set pct = ((p.current_amount / p.target_amount * 100) if p.target_amount > 0 else 0)|int %}
+          <tr>
+            <td>{{ p.id }}</td>
+            <td>{{ p.title }}</td>
+            <td>{{ p.organizer_username }}</td>
+            <td>
+              {% if p.status == 'active' %}
+                <span class="badge badge-green">Active</span>
+              {% elif p.status == 'draft' %}
+                <span class="badge badge-gray">Draft</span>
+              {% elif p.status == 'payment' %}
+                <span class="badge badge-blue">Payment</span>
+              {% elif p.status == 'completed' %}
+                <span class="badge badge-green">Completed</span>
+              {% elif p.status == 'cancelled' %}
+                <span class="badge badge-red">Cancelled</span>
+              {% else %}
+                <span class="badge badge-yellow">{{ p.status }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="progress"><span class="progress-bar" style="width:{{ [pct, 100]|min }}%"></span></span>
+              {{ pct }}%
+            </td>
+            <td>{{ p.city }}</td>
+            <td>{{ p.deadline[:10] if p.deadline else '' }}</td>
+            <td>{{ p.participant_count }}</td>
+            <td>
+              <form method="post" action="/procurements/{{ p.id }}/status">
+                <select name="new_status">
+                  <option value="draft" {% if p.status=='draft' %}selected{% endif %}>Draft</option>
+                  <option value="active" {% if p.status=='active' %}selected{% endif %}>Active</option>
+                  <option value="stopped" {% if p.status=='stopped' %}selected{% endif %}>Stopped</option>
+                  <option value="payment" {% if p.status=='payment' %}selected{% endif %}>Payment</option>
+                  <option value="completed" {% if p.status=='completed' %}selected{% endif %}>Completed</option>
+                  <option value="cancelled" {% if p.status=='cancelled' %}selected{% endif %}>Cancelled</option>
+                </select>
+                <button type="submit" class="btn btn-primary" style="margin-left:.3rem">Set</button>
+              </form>
+              &nbsp;
+              <form method="post" action="/procurements/{{ p.id }}/delete" onsubmit="return confirm('Delete this procurement?')">
+                <button type="submit" class="btn btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p>No procurements found.</p>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>
