@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-bottom:1rem">Categories ({{ categories|length }})</h2>
+
+  <form method="post" action="/categories/create" style="display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:flex-end">
+    <div>
+      <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.25rem">Name</label>
+      <input name="name" required placeholder="Category name" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;font-size:.9rem" />
+    </div>
+    <div>
+      <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.25rem">Description</label>
+      <input name="description" placeholder="Optional description" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;font-size:.9rem;width:220px" />
+    </div>
+    <div>
+      <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.25rem">Icon</label>
+      <input name="icon" placeholder="e.g. 🛒" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;font-size:.9rem;width:80px" />
+    </div>
+    <button type="submit" class="btn btn-primary">+ Add Category</button>
+  </form>
+
+  {% if categories %}
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Icon</th><th>Name</th><th>Description</th><th>Active</th><th>Created</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for c in categories %}
+      <tr>
+        <td>{{ c.id }}</td>
+        <td style="font-size:1.3rem">{{ c.icon or '—' }}</td>
+        <td>{{ c.name }}</td>
+        <td>{{ c.description[:60] }}{% if c.description and c.description|length > 60 %}…{% endif %}</td>
+        <td><span class="badge {% if c.is_active %}badge-green{% else %}badge-red{% endif %}">{{ 'Yes' if c.is_active else 'No' }}</span></td>
+        <td>{{ c.created_at[:10] if c.created_at else '' }}</td>
+        <td>
+          <form method="post" action="/categories/{{ c.id }}/delete" onsubmit="return confirm('Deactivate category?')">
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p>No categories found. Add the first one above.</p>
+  {% endif %}
+</div>
+{% endblock %}

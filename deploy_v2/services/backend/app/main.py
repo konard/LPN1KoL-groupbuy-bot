@@ -396,7 +396,18 @@ async def lifespan(application: FastAPI):
     if redis_client:
         await redis_client.aclose()
 
-app = FastAPI(title="GroupBuy Backend API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="GroupBuy Backend API",
+    version="2.0.0",
+    description=(
+        "REST API for the GroupBuy platform — group purchasing management.\n\n"
+        "**Authentication**: Bearer JWT token. Obtain via `POST /auth/login`.\n\n"
+        "**Roles**: regular users can manage their own data; admin users can manage all resources.\n\n"
+        "Interactive docs: `/docs` (Swagger UI) · `/redoc` (ReDoc)"
+    ),
+    contact={"name": "GroupBuy Team"},
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -695,7 +706,7 @@ async def leave_procurement(
 @app.get("/payments", response_model=list[PaymentOut])
 def list_payments(
     skip: int = 0,
-    limit: int = 50,
+    limit: int = Query(50, le=500),
     db: Session = Depends(get_db),
     user: UserModel = Depends(current_user),
 ):
@@ -815,6 +826,49 @@ def receive_socket_event(event: SocketEvent, db: Session = Depends(get_db)):
     db.add(msg)
     db.commit()
     return None
+
+
+# ── Change password ───────────────────────────────────────────────────────────
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/auth/change-password", status_code=204)
+def change_password(
+    data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    if not verify_password(data.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    user.hashed_password = hash_password(data.new_password)
+    db.commit()
+
+
+# ── Admin statistics ──────────────────────────────────────────────────────────
+@app.get("/admin/stats")
+def admin_stats(db: Session = Depends(get_db), _=Depends(admin_user)):
+    from sqlalchemy import func
+    total_users = db.query(func.count(UserModel.id)).scalar() or 0
+    total_procurements = db.query(func.count(ProcurementModel.id)).scalar() or 0
+    active_procurements = db.query(func.count(ProcurementModel.id)).filter(
+        ProcurementModel.status == "active"
+    ).scalar() or 0
+    total_payments = db.query(func.count(PaymentModel.id)).scalar() or 0
+    total_deposited = db.query(func.sum(PaymentModel.amount)).filter(
+        PaymentModel.payment_type == "deposit",
+        PaymentModel.status == "succeeded",
+    ).scalar() or 0
+    return {
+        "total_users": total_users,
+        "total_procurements": total_procurements,
+        "active_procurements": active_procurements,
+        "total_payments": total_payments,
+        "total_deposited": float(total_deposited),
+    }
 
 
 # ── Output helpers (avoids Pydantic issues with Decimal/lazy-load) ────────────
