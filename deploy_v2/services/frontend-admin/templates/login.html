@@ -12,21 +12,35 @@
     input { width: 100%; padding: .6rem; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 1rem; font-size: 1rem; }
     button { width: 100%; padding: .75rem; background: #007bff; color: #fff; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
     .error { color: #dc3545; margin-bottom: 1rem; font-size: .9rem; }
+    .hint { color: #555; margin-bottom: 1rem; font-size: .9rem; }
   </style>
 </head>
 <body>
   <div class="box">
     <h2>Admin Login</h2>
-    {% if request.query_params.get("error") %}
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% elif request.query_params.get("error") %}
       <p class="error">Invalid credentials. Please try again.</p>
     {% endif %}
-    <form method="post" action="/login">
-      <label>Username</label>
-      <input name="username" type="text" required autofocus>
-      <label>Password</label>
-      <input name="password" type="password" required>
-      <button type="submit">Sign In</button>
-    </form>
+
+    {% if step == "code" %}
+      <p class="hint">Verification code sent to {{ email_hint }}. Enter it below.</p>
+      <form method="post" action="/login/verify">
+        <input type="hidden" name="phone" value="{{ phone }}">
+        <label>Verification Code</label>
+        <input name="code" type="text" inputmode="numeric" maxlength="6" required autofocus placeholder="6-digit code">
+        <button type="submit">Verify</button>
+      </form>
+    {% else %}
+      <form method="post" action="/login">
+        <label>Phone Number</label>
+        <input name="phone" type="tel" required autofocus placeholder="+79991234567">
+        <label>Password</label>
+        <input name="password" type="password" required>
+        <button type="submit">Sign In</button>
+      </form>
+    {% endif %}
   </div>
 </body>
 </html>

@@ -73,7 +73,11 @@ async def dashboard(request: Request, admin_token: str | None = Cookie(default=N
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, admin_token: str | None = Cookie(default=None)):
+async def index(
+    request: Request,
+    balance_msg: Optional[str] = None,
+    admin_token: str | None = Cookie(default=None),
+):
     if not admin_token:
         return RedirectResponse("/login")
     users = await api_get("/users?limit=200", admin_token) or []
@@ -82,6 +86,7 @@ async def index(request: Request, admin_token: str | None = Cookie(default=None)
         "request": request,
         "users": users,
         "health": health,
+        "balance_msg": balance_msg,
     })
 
 
@@ -93,6 +98,18 @@ async def toggle_active(user_id: int, admin_token: str | None = Cookie(default=N
     if user:
         await api_patch(f"/users/{user_id}", admin_token, {"is_active": not user["is_active"]})
     return RedirectResponse("/", status_code=302)
+
+
+@app.post("/users/{user_id}/adjust-balance")
+async def adjust_balance(
+    user_id: int,
+    amount: float = Form(...),
+    admin_token: str | None = Cookie(default=None),
+):
+    if not admin_token:
+        return RedirectResponse("/login")
+    await api_post(f"/users/{user_id}/balance", admin_token, {"amount": amount})
+    return RedirectResponse("/?balance_msg=Balance+adjusted", status_code=302)
 
 
 @app.post("/users/{user_id}/delete")
@@ -188,16 +205,59 @@ async def payments_page(request: Request, admin_token: str | None = Cookie(defau
 # ── Auth ──────────────────────────────────────────────────────────────────────
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "error": None,
+        "step": "phone",
+        "phone": "",
+        "email_hint": "",
+    })
 
 
 @app.post("/login")
-async def login(response: Response, username: str = Form(...), password: str = Form(...)):
+async def login(
+    request: Request,
+    response: Response,
+    phone: str = Form(...),
+    password: str = Form(...),
+):
     async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=10) as client:
-        r = await client.post("/auth/login", json={"username": username, "password": password})
+        r = await client.post("/auth/login", json={"phone": phone, "password": password})
     if r.status_code != 200:
-        resp = RedirectResponse("/login?error=1", status_code=302)
-        return resp
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "Invalid phone number or password.",
+            "step": "phone",
+            "phone": "",
+            "email_hint": "",
+        })
+    data = r.json()
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "error": None,
+        "step": "code",
+        "phone": phone,
+        "email_hint": data.get("email_hint", ""),
+    })
+
+
+@app.post("/login/verify")
+async def login_verify(
+    request: Request,
+    response: Response,
+    phone: str = Form(...),
+    code: str = Form(...),
+):
+    async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=10) as client:
+        r = await client.post("/auth/verify-code", json={"phone": phone, "code": code})
+    if r.status_code != 200:
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "Invalid or expired verification code.",
+            "step": "code",
+            "phone": phone,
+            "email_hint": "",
+        })
     token = r.json()["access_token"]
     resp = RedirectResponse("/dashboard", status_code=302)
     resp.set_cookie("admin_token", token, httponly=True, samesite="lax")
