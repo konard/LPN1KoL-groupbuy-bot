@@ -1,4 +1,6 @@
 import os
+from typing import Optional
+
 import httpx
 from fastapi import FastAPI, Request, Form, Cookie, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -212,3 +214,94 @@ async def logout():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── Complaints ────────────────────────────────────────────────────────────────
+@app.get("/complaints", response_class=HTMLResponse)
+async def complaints_page(
+    request: Request,
+    status: Optional[str] = None,
+    admin_token: str | None = Cookie(default=None),
+):
+    if not admin_token:
+        return RedirectResponse("/login")
+    path = "/complaints"
+    if status:
+        path += f"?status={status}"
+    complaints = await api_get(path, admin_token) or []
+    return templates.TemplateResponse("complaints.html", {
+        "request": request,
+        "complaints": complaints,
+        "current_filter": status or "",
+    })
+
+
+@app.post("/complaints/{cid}/update")
+async def update_complaint_view(
+    cid: int,
+    status: str = Form(...),
+    resolution: str = Form(""),
+    admin_token: str | None = Cookie(default=None),
+):
+    if not admin_token:
+        return RedirectResponse("/login")
+    await api_patch(f"/complaints/{cid}", admin_token, {"status": status, "resolution": resolution})
+    return RedirectResponse("/complaints", status_code=302)
+
+
+# ── Analytics ─────────────────────────────────────────────────────────────────
+@app.get("/analytics", response_class=HTMLResponse)
+async def analytics_page(request: Request, admin_token: str | None = Cookie(default=None)):
+    if not admin_token:
+        return RedirectResponse("/login")
+    a = await api_get("/admin/analytics", admin_token) or {
+        "window_days": 30,
+        "new_users_30d": 0,
+        "new_procurements_30d": 0,
+        "status_breakdown": {},
+        "payments_by_type": {},
+        "top_cities": [],
+        "top_participants": [],
+        "open_complaints": 0,
+        "generated_at": "",
+    }
+    return templates.TemplateResponse("analytics.html", {"request": request, "a": a})
+
+
+# ── Broadcasts ────────────────────────────────────────────────────────────────
+@app.get("/broadcasts", response_class=HTMLResponse)
+async def broadcasts_page(request: Request, admin_token: str | None = Cookie(default=None)):
+    if not admin_token:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("broadcasts.html", {"request": request, "sent": None})
+
+
+@app.post("/broadcasts", response_class=HTMLResponse)
+async def send_broadcast(
+    request: Request,
+    title: str = Form(...),
+    body: str = Form(...),
+    link: str = Form(""),
+    kind: str = Form("system"),
+    admin_token: str | None = Cookie(default=None),
+):
+    if not admin_token:
+        return RedirectResponse("/login")
+    result = await api_post(
+        "/admin/broadcast",
+        admin_token,
+        {"title": title, "body": body, "link": link, "kind": kind},
+    ) or {"sent": 0}
+    return templates.TemplateResponse(
+        "broadcasts.html",
+        {"request": request, "sent": result.get("sent", 0)},
+    )
+
+
+# ── Activity log ──────────────────────────────────────────────────────────────
+@app.get("/activity-log", response_class=HTMLResponse)
+async def activity_log_page(request: Request, admin_token: str | None = Cookie(default=None)):
+    if not admin_token:
+        return RedirectResponse("/login")
+    rows = await api_get("/admin/activity-log?limit=200", admin_token) or []
+    return templates.TemplateResponse("activity_log.html", {"request": request, "rows": rows})

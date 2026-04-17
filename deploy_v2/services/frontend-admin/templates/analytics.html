@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 style="margin-bottom:1rem">Analytics</h1>
+
+  <div class="card">
+    <h2 style="font-size:1rem;margin-bottom:.5rem">Window: last {{ a.window_days }} days</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin:1rem 0">
+      <div style="padding:1rem;background:#eef;border-radius:6px">
+        <div style="font-size:1.5rem;font-weight:700">{{ a.new_users_30d }}</div>
+        <div>New users</div>
+      </div>
+      <div style="padding:1rem;background:#efe;border-radius:6px">
+        <div style="font-size:1.5rem;font-weight:700">{{ a.new_procurements_30d }}</div>
+        <div>New procurements</div>
+      </div>
+      <div style="padding:1rem;background:#fee;border-radius:6px">
+        <div style="font-size:1.5rem;font-weight:700">{{ a.open_complaints }}</div>
+        <div>Open complaints</div>
+      </div>
+      <div style="padding:1rem;background:#ffe;border-radius:6px">
+        <div style="font-size:1.5rem;font-weight:700">{{ a.status_breakdown.get('active', 0) }}</div>
+        <div>Active procurements</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div class="card">
+      <h3 style="margin-bottom:.5rem">Procurement status breakdown</h3>
+      <table>
+        <thead><tr><th>Status</th><th>Count</th></tr></thead>
+        <tbody>
+          {% for st, count in a.status_breakdown.items() %}
+          <tr><td>{{ st }}</td><td>{{ count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:.5rem">Payments by type (succeeded)</h3>
+      <table>
+        <thead><tr><th>Type</th><th>Amount (₽)</th></tr></thead>
+        <tbody>
+          {% for kind, amount in a.payments_by_type.items() %}
+          <tr><td>{{ kind }}</td><td>{{ '%.2f'|format(amount) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:.5rem">Top cities</h3>
+      <table>
+        <thead><tr><th>City</th><th>Procurements</th></tr></thead>
+        <tbody>
+          {% for c in a.top_cities %}
+          <tr><td>{{ c.city }}</td><td>{{ c.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:.5rem">Top participants</h3>
+      <table>
+        <thead><tr><th>User</th><th>Joined</th></tr></thead>
+        <tbody>
+          {% for p in a.top_participants %}
+          <tr><td>{{ p.username }}</td><td>{{ p.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <small>Generated at: {{ a.generated_at }}</small>
+  </div>
+{% endblock %}

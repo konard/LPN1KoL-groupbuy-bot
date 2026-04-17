@@ -142,13 +142,119 @@ class ChatMessageModel(Base):
     msg_type = Column(String(20), default="message")
     text = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    read_by = Column(Text, default="")  # CSV list of user ids that have read the message
 
     procurement = relationship("ProcurementModel", back_populates="messages",
                                foreign_keys=[procurement_id])
     user = relationship("UserModel", foreign_keys=[user_id])
 
 
+class NotificationModel(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # kind: system | procurement | payment | vote | invitation | complaint
+    kind = Column(String(30), default="system")
+    title = Column(String(200), default="")
+    body = Column(Text, default="")
+    link = Column(String(500), default="")
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("UserModel", foreign_keys=[user_id])
+
+
+class VoteModel(Base):
+    __tablename__ = "votes"
+    id = Column(Integer, primary_key=True, index=True)
+    procurement_id = Column(Integer, ForeignKey("procurements.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # option: free-form string (e.g. supplier id, "yes"/"no", candidate name)
+    option = Column(String(200), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    procurement = relationship("ProcurementModel", foreign_keys=[procurement_id])
+    user = relationship("UserModel", foreign_keys=[user_id])
+
+
+class ComplaintModel(Base):
+    __tablename__ = "complaints"
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    procurement_id = Column(Integer, ForeignKey("procurements.id"), nullable=True)
+    subject = Column(String(200), default="")
+    body = Column(Text, default="")
+    # status: open | in_review | resolved | rejected
+    status = Column(String(30), default="open", index=True)
+    resolution = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    reporter = relationship("UserModel", foreign_keys=[reporter_id])
+    target_user = relationship("UserModel", foreign_keys=[target_user_id])
+    procurement = relationship("ProcurementModel", foreign_keys=[procurement_id])
+
+
+class ReviewModel(Base):
+    __tablename__ = "reviews"
+    id = Column(Integer, primary_key=True, index=True)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    target_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    procurement_id = Column(Integer, ForeignKey("procurements.id"), nullable=True)
+    rating = Column(Integer, nullable=False)  # 1..5
+    body = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    author = relationship("UserModel", foreign_keys=[author_id])
+    target_user = relationship("UserModel", foreign_keys=[target_user_id])
+    procurement = relationship("ProcurementModel", foreign_keys=[procurement_id])
+
+
+class InvitationModel(Base):
+    __tablename__ = "invitations"
+    id = Column(Integer, primary_key=True, index=True)
+    procurement_id = Column(Integer, ForeignKey("procurements.id"), nullable=False, index=True)
+    inviter_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    invitee_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # status: pending | accepted | declined
+    status = Column(String(20), default="pending")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    procurement = relationship("ProcurementModel", foreign_keys=[procurement_id])
+    inviter = relationship("UserModel", foreign_keys=[inviter_id])
+    invitee = relationship("UserModel", foreign_keys=[invitee_id])
+
+
+class ActivityLogModel(Base):
+    __tablename__ = "activity_log"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(100), nullable=False, index=True)
+    target = Column(String(200), default="")
+    detail = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("UserModel", foreign_keys=[user_id])
+
+
 Base.metadata.create_all(bind=engine)
+
+# ── Lightweight migration for pre-existing SQLite DBs ─────────────────────────
+def _ensure_column(table: str, column: str, col_ddl: str):
+    with engine.begin() as conn:
+        try:
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+            cols = {r[1] for r in rows}
+            if column not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col_ddl}")
+        except Exception:
+            pass
+
+
+if DATABASE_URL.startswith("sqlite"):
+    _ensure_column("chat_messages", "read_by", "read_by TEXT DEFAULT ''")
 
 
 def get_db():
@@ -456,6 +562,31 @@ def me(user: UserModel = Depends(current_user)):
 @app.get("/users", response_model=list[UserOut])
 def list_users(skip: int = 0, limit: int = 50, db: Session = Depends(get_db), _=Depends(admin_user)):
     return [_user_out(u) for u in db.query(UserModel).offset(skip).limit(limit).all()]
+
+
+# NOTE: literal-prefix routes (/users/search, /users/by-email/...) are declared
+# before /users/{user_id} so FastAPI matches them correctly.
+@app.get("/users/search", response_model=list[UserOut])
+def search_users_route(
+    q: str = Query("", min_length=0),
+    limit: int = Query(20, le=100),
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(current_user),
+):
+    """Search users by username or email substring (any authenticated user)."""
+    query = db.query(UserModel)
+    if q:
+        like = f"%{q}%"
+        query = query.filter((UserModel.username.ilike(like)) | (UserModel.email.ilike(like)))
+    return [_user_out(u) for u in query.order_by(UserModel.id).limit(limit).all()]
+
+
+@app.get("/users/by-email/{email}", response_model=UserOut)
+def user_by_email_route(email: str, db: Session = Depends(get_db), _=Depends(admin_user)):
+    user = db.query(UserModel).filter(UserModel.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _user_out(user)
 
 
 @app.get("/users/{user_id}", response_model=UserOut)
@@ -871,6 +1002,802 @@ def admin_stats(db: Session = Depends(get_db), _=Depends(admin_user)):
     }
 
 
+# ── User balance ─────────────────────────────────────────────────────────────
+@app.get("/users/{user_id}/balance")
+def get_balance(user_id: int, db: Session = Depends(get_db), requester: UserModel = Depends(current_user)):
+    if requester.id != user_id and not requester.is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"user_id": user.id, "balance": float(user.balance or 0)}
+
+
+class BalanceUpdate(BaseModel):
+    amount: float
+    reason: str = ""
+
+
+@app.post("/users/{user_id}/balance", response_model=UserOut)
+async def update_balance(
+    user_id: int,
+    data: BalanceUpdate,
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(admin_user),
+):
+    """Admin: add (positive) or subtract (negative) `amount` from user's balance."""
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.balance = float(user.balance or 0) + float(data.amount)
+    db.add(ActivityLogModel(
+        user_id=user.id,
+        action="balance_adjusted",
+        target=f"user:{user.id}",
+        detail=f"amount={data.amount}; reason={data.reason}",
+    ))
+    db.commit()
+    db.refresh(user)
+    await publish_event(f"room:user_{user.id}", {
+        "type": "balance_updated",
+        "user_id": user.id,
+        "balance": float(user.balance),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return _user_out(user)
+
+
+# ── Procurement extended actions ─────────────────────────────────────────────
+@app.get("/procurements/{proc_id}/receipt")
+def procurement_receipt(proc_id: int, db: Session = Depends(get_db), _: UserModel = Depends(current_user)):
+    """Receipt / summary of a procurement: totals, per-participant rows, commission."""
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    participants = db.query(ParticipantModel).filter(
+        ParticipantModel.procurement_id == proc_id,
+        ParticipantModel.is_active.is_(True),
+    ).all()
+    rows = [_participant_out(pt) for pt in participants]
+    total_quantity = sum(float(pt.quantity or 0) for pt in participants)
+    total_amount = sum(float(pt.amount or 0) for pt in participants)
+    commission = total_amount * float(p.commission_percent or 0) / 100.0
+    return {
+        "procurement_id": p.id,
+        "title": p.title,
+        "status": p.status,
+        "participants": rows,
+        "participant_count": len(rows),
+        "total_quantity": total_quantity,
+        "total_amount": total_amount,
+        "commission_percent": float(p.commission_percent or 0),
+        "commission_amount": commission,
+        "grand_total": total_amount + commission,
+    }
+
+
+class StopAmountRequest(BaseModel):
+    stop_at_amount: float
+
+
+@app.post("/procurements/{proc_id}/stop-amount", response_model=ProcurementOut)
+async def set_stop_amount(
+    proc_id: int,
+    data: StopAmountRequest,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    if p.organizer_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="Not the organizer")
+    p.stop_at_amount = data.stop_at_amount
+    p.updated_at = datetime.now(timezone.utc)
+    # Auto-stop if already reached
+    if float(p.current_amount or 0) >= float(data.stop_at_amount):
+        p.status = "stopped"
+    db.commit()
+    db.refresh(p)
+    await publish_event(f"room:procurement_{proc_id}", {
+        "type": "stop_amount_updated",
+        "procurement_id": p.id,
+        "stop_at_amount": float(p.stop_at_amount),
+        "status": p.status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return _procurement_out(p)
+
+
+class ApproveSupplierRequest(BaseModel):
+    supplier_name: str
+    price_per_unit: Optional[float] = None
+
+
+@app.post("/procurements/{proc_id}/approve-supplier", response_model=ProcurementOut)
+async def approve_supplier(
+    proc_id: int,
+    data: ApproveSupplierRequest,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    if p.organizer_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="Not the organizer")
+    if data.price_per_unit is not None:
+        p.price_per_unit = data.price_per_unit
+    p.status = "payment"
+    p.updated_at = datetime.now(timezone.utc)
+    db.add(ActivityLogModel(
+        user_id=user.id,
+        action="supplier_approved",
+        target=f"procurement:{p.id}",
+        detail=f"supplier={data.supplier_name}; price={data.price_per_unit}",
+    ))
+    db.commit()
+    db.refresh(p)
+    await publish_event(f"room:procurement_{proc_id}", {
+        "type": "supplier_approved",
+        "procurement_id": p.id,
+        "supplier_name": data.supplier_name,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return _procurement_out(p)
+
+
+class CloseProcurementRequest(BaseModel):
+    status: str = "completed"  # completed | cancelled
+
+
+@app.post("/procurements/{proc_id}/close", response_model=ProcurementOut)
+async def close_procurement(
+    proc_id: int,
+    data: CloseProcurementRequest,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    if p.organizer_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="Not the organizer")
+    if data.status not in ("completed", "cancelled"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    p.status = data.status
+    p.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(p)
+    await publish_event(f"room:procurement_{proc_id}", {
+        "type": "procurement_closed",
+        "procurement_id": p.id,
+        "status": p.status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return _procurement_out(p)
+
+
+# ── Voting ───────────────────────────────────────────────────────────────────
+class VoteCreate(BaseModel):
+    option: str
+
+
+class VoteOut(BaseModel):
+    id: int
+    procurement_id: int
+    user_id: int
+    option: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.post("/procurements/{proc_id}/votes", response_model=VoteOut, status_code=201)
+async def cast_vote(
+    proc_id: int,
+    data: VoteCreate,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    # Only participants can vote (organizer allowed too)
+    if p.organizer_id != user.id:
+        is_participant = db.query(ParticipantModel).filter(
+            ParticipantModel.procurement_id == proc_id,
+            ParticipantModel.user_id == user.id,
+            ParticipantModel.is_active.is_(True),
+        ).first()
+        if not is_participant:
+            raise HTTPException(status_code=403, detail="Not a participant")
+    existing = db.query(VoteModel).filter(
+        VoteModel.procurement_id == proc_id,
+        VoteModel.user_id == user.id,
+    ).first()
+    if existing:
+        existing.option = data.option
+        existing.created_at = datetime.now(timezone.utc)
+        vote = existing
+    else:
+        vote = VoteModel(procurement_id=proc_id, user_id=user.id, option=data.option)
+        db.add(vote)
+    db.commit()
+    db.refresh(vote)
+    await publish_event(f"room:procurement_{proc_id}", {
+        "type": "vote_cast",
+        "procurement_id": proc_id,
+        "user_id": user.id,
+        "option": data.option,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return vote
+
+
+@app.get("/procurements/{proc_id}/votes")
+def vote_results(proc_id: int, db: Session = Depends(get_db), _: UserModel = Depends(current_user)):
+    votes = db.query(VoteModel).filter(VoteModel.procurement_id == proc_id).all()
+    tally: dict[str, int] = {}
+    for v in votes:
+        tally[v.option] = tally.get(v.option, 0) + 1
+    winner = max(tally.items(), key=lambda kv: kv[1])[0] if tally else None
+    return {
+        "procurement_id": proc_id,
+        "total_votes": len(votes),
+        "tally": tally,
+        "winner": winner,
+    }
+
+
+# ── Invitations ──────────────────────────────────────────────────────────────
+class InvitationCreate(BaseModel):
+    invitee_id: int
+
+
+class InvitationOut(BaseModel):
+    id: int
+    procurement_id: int
+    inviter_id: int
+    invitee_id: int
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.post("/procurements/{proc_id}/invitations", response_model=InvitationOut, status_code=201)
+async def invite_user(
+    proc_id: int,
+    data: InvitationCreate,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    invitee = db.query(UserModel).filter(UserModel.id == data.invitee_id).first()
+    if not invitee:
+        raise HTTPException(status_code=404, detail="Invitee not found")
+    inv = InvitationModel(procurement_id=proc_id, inviter_id=user.id, invitee_id=invitee.id)
+    db.add(inv)
+    # also create a notification
+    db.add(NotificationModel(
+        user_id=invitee.id,
+        kind="invitation",
+        title=f"Invitation: {p.title}",
+        body=f"{user.username} invited you to procurement '{p.title}'",
+        link=f"/procurements/{p.id}",
+    ))
+    db.commit()
+    db.refresh(inv)
+    await publish_event(f"room:user_{invitee.id}", {
+        "type": "invitation_received",
+        "procurement_id": proc_id,
+        "procurement_title": p.title,
+        "inviter": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return inv
+
+
+@app.get("/invitations", response_model=list[InvitationOut])
+def my_invitations(db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
+    return db.query(InvitationModel).filter(
+        InvitationModel.invitee_id == user.id,
+    ).order_by(InvitationModel.created_at.desc()).all()
+
+
+@app.post("/invitations/{inv_id}/respond", response_model=InvitationOut)
+async def respond_invitation(
+    inv_id: int,
+    accept: bool = Query(...),
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    inv = db.query(InvitationModel).filter(InvitationModel.id == inv_id).first()
+    if not inv or inv.invitee_id != user.id:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    inv.status = "accepted" if accept else "declined"
+    db.commit()
+    db.refresh(inv)
+    return inv
+
+
+# ── Notifications ────────────────────────────────────────────────────────────
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    kind: str
+    title: str
+    body: str
+    link: str
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationCreate(BaseModel):
+    user_id: int
+    kind: str = "system"
+    title: str = ""
+    body: str = ""
+    link: str = ""
+
+
+@app.get("/notifications", response_model=list[NotificationOut])
+def list_notifications(
+    unread_only: bool = False,
+    limit: int = Query(50, le=200),
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    q = db.query(NotificationModel).filter(NotificationModel.user_id == user.id)
+    if unread_only:
+        q = q.filter(NotificationModel.is_read.is_(False))
+    return q.order_by(NotificationModel.created_at.desc()).limit(limit).all()
+
+
+@app.get("/notifications/unread-count")
+def unread_count(db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
+    from sqlalchemy import func
+    c = db.query(func.count(NotificationModel.id)).filter(
+        NotificationModel.user_id == user.id,
+        NotificationModel.is_read.is_(False),
+    ).scalar() or 0
+    return {"count": int(c)}
+
+
+@app.post("/notifications/{notif_id}/read", status_code=204)
+def mark_notification_read(
+    notif_id: int,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    n = db.query(NotificationModel).filter(NotificationModel.id == notif_id).first()
+    if not n or n.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    n.is_read = True
+    db.commit()
+
+
+@app.post("/notifications/mark-all-read", status_code=204)
+def mark_all_notifications_read(db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
+    db.query(NotificationModel).filter(
+        NotificationModel.user_id == user.id,
+        NotificationModel.is_read.is_(False),
+    ).update({"is_read": True})
+    db.commit()
+
+
+@app.post("/notifications", response_model=NotificationOut, status_code=201)
+async def send_notification(
+    data: NotificationCreate,
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(admin_user),
+):
+    n = NotificationModel(**data.model_dump())
+    db.add(n)
+    db.commit()
+    db.refresh(n)
+    await publish_event(f"room:user_{data.user_id}", {
+        "type": "notification",
+        "notification_id": n.id,
+        "kind": n.kind,
+        "title": n.title,
+        "body": n.body,
+        "link": n.link,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return n
+
+
+# ── Chat: send message via REST (fallback when no socket) / mark read ────────
+class ChatMessageCreate(BaseModel):
+    text: str
+
+
+@app.post("/chat/{room}/messages", response_model=ChatMessageOut, status_code=201)
+async def post_chat_message(
+    room: str,
+    data: ChatMessageCreate,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    text_ = (data.text or "").strip()
+    if not text_:
+        raise HTTPException(status_code=400, detail="Empty message")
+    msg = ChatMessageModel(
+        room=room,
+        user_id=user.id,
+        msg_type="message",
+        text=text_[:2000],
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    await publish_event(f"room:{room}", {
+        "type": "message",
+        "room": room,
+        "user_id": str(user.id),
+        "text": msg.text,
+        "timestamp": msg.timestamp.isoformat() if msg.timestamp else datetime.now(timezone.utc).isoformat(),
+    })
+    return _chat_msg_out(msg)
+
+
+@app.post("/chat/{room}/mark-read", status_code=204)
+def mark_room_read(
+    room: str,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    msgs = db.query(ChatMessageModel).filter(ChatMessageModel.room == room).all()
+    uid = str(user.id)
+    for m in msgs:
+        readers = set((m.read_by or "").split(",")) - {""}
+        if uid not in readers:
+            readers.add(uid)
+            m.read_by = ",".join(sorted(readers))
+    db.commit()
+
+
+@app.get("/chat/{room}/unread-count")
+def room_unread_count(
+    room: str,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    msgs = db.query(ChatMessageModel).filter(ChatMessageModel.room == room).all()
+    uid = str(user.id)
+    count = 0
+    for m in msgs:
+        readers = set((m.read_by or "").split(",")) - {""}
+        if uid not in readers and m.user_id != user.id:
+            count += 1
+    return {"room": room, "count": count}
+
+
+# ── Reviews ──────────────────────────────────────────────────────────────────
+class ReviewCreate(BaseModel):
+    target_user_id: int
+    rating: int
+    body: str = ""
+    procurement_id: Optional[int] = None
+
+
+class ReviewOut(BaseModel):
+    id: int
+    author_id: int
+    author_username: str
+    target_user_id: int
+    procurement_id: Optional[int]
+    rating: int
+    body: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.post("/reviews", response_model=ReviewOut, status_code=201)
+def create_review(data: ReviewCreate, db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
+    if not 1 <= data.rating <= 5:
+        raise HTTPException(status_code=400, detail="Rating must be 1..5")
+    if data.target_user_id == user.id:
+        raise HTTPException(status_code=400, detail="Cannot review yourself")
+    target = db.query(UserModel).filter(UserModel.id == data.target_user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target user not found")
+    r = ReviewModel(
+        author_id=user.id,
+        target_user_id=data.target_user_id,
+        procurement_id=data.procurement_id,
+        rating=data.rating,
+        body=data.body,
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    return _review_out(r)
+
+
+@app.get("/users/{user_id}/reviews", response_model=list[ReviewOut])
+def user_reviews(user_id: int, db: Session = Depends(get_db)):
+    rs = db.query(ReviewModel).filter(ReviewModel.target_user_id == user_id) \
+        .order_by(ReviewModel.created_at.desc()).all()
+    return [_review_out(r) for r in rs]
+
+
+@app.get("/users/{user_id}/rating")
+def user_rating(user_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    avg = db.query(func.avg(ReviewModel.rating)).filter(ReviewModel.target_user_id == user_id).scalar()
+    count = db.query(func.count(ReviewModel.id)).filter(ReviewModel.target_user_id == user_id).scalar() or 0
+    return {"user_id": user_id, "average": float(avg) if avg else None, "count": int(count)}
+
+
+# ── Complaints ───────────────────────────────────────────────────────────────
+class ComplaintCreate(BaseModel):
+    subject: str
+    body: str
+    target_user_id: Optional[int] = None
+    procurement_id: Optional[int] = None
+
+
+class ComplaintUpdate(BaseModel):
+    status: Optional[str] = None
+    resolution: Optional[str] = None
+
+
+class ComplaintOut(BaseModel):
+    id: int
+    reporter_id: int
+    reporter_username: str
+    target_user_id: Optional[int]
+    procurement_id: Optional[int]
+    subject: str
+    body: str
+    status: str
+    resolution: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.post("/complaints", response_model=ComplaintOut, status_code=201)
+async def create_complaint(
+    data: ComplaintCreate,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    c = ComplaintModel(
+        reporter_id=user.id,
+        target_user_id=data.target_user_id,
+        procurement_id=data.procurement_id,
+        subject=data.subject,
+        body=data.body,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    await publish_event("room:admin", {
+        "type": "complaint_filed",
+        "complaint_id": c.id,
+        "reporter": user.username,
+        "subject": c.subject,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return _complaint_out(c)
+
+
+@app.get("/complaints", response_model=list[ComplaintOut])
+def list_complaints(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    mine: bool = False,
+    db: Session = Depends(get_db),
+    user: UserModel = Depends(current_user),
+):
+    q = db.query(ComplaintModel)
+    if mine or not user.is_admin:
+        q = q.filter(ComplaintModel.reporter_id == user.id)
+    if status_filter:
+        q = q.filter(ComplaintModel.status == status_filter)
+    return [_complaint_out(c) for c in q.order_by(ComplaintModel.created_at.desc()).all()]
+
+
+@app.patch("/complaints/{cid}", response_model=ComplaintOut)
+async def update_complaint(
+    cid: int,
+    data: ComplaintUpdate,
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(admin_user),
+):
+    c = db.query(ComplaintModel).filter(ComplaintModel.id == cid).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(c, field, value)
+    c.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(c)
+    await publish_event(f"room:user_{c.reporter_id}", {
+        "type": "complaint_updated",
+        "complaint_id": c.id,
+        "status": c.status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return _complaint_out(c)
+
+
+# ── Admin: analytics, broadcast, featured, activity log ──────────────────────
+@app.get("/admin/analytics")
+def admin_analytics(db: Session = Depends(get_db), _: UserModel = Depends(admin_user)):
+    from sqlalchemy import func
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=30)
+
+    new_users_30d = db.query(func.count(UserModel.id)).filter(
+        UserModel.created_at >= past
+    ).scalar() or 0
+    new_procurements_30d = db.query(func.count(ProcurementModel.id)).filter(
+        ProcurementModel.created_at >= past
+    ).scalar() or 0
+
+    # Status breakdown
+    status_rows = db.query(ProcurementModel.status, func.count(ProcurementModel.id)) \
+        .group_by(ProcurementModel.status).all()
+    status_breakdown = {s: int(c) for s, c in status_rows}
+
+    # Payment totals by type
+    type_rows = db.query(PaymentModel.payment_type, func.sum(PaymentModel.amount)) \
+        .filter(PaymentModel.status == "succeeded") \
+        .group_by(PaymentModel.payment_type).all()
+    payments_by_type = {t: float(a or 0) for t, a in type_rows}
+
+    # Top cities
+    city_rows = db.query(ProcurementModel.city, func.count(ProcurementModel.id)) \
+        .filter(ProcurementModel.city != "") \
+        .group_by(ProcurementModel.city) \
+        .order_by(func.count(ProcurementModel.id).desc()).limit(5).all()
+    top_cities = [{"city": c, "count": int(n)} for c, n in city_rows]
+
+    # Top participants
+    part_rows = db.query(ParticipantModel.user_id, func.count(ParticipantModel.id)) \
+        .filter(ParticipantModel.is_active.is_(True)) \
+        .group_by(ParticipantModel.user_id) \
+        .order_by(func.count(ParticipantModel.id).desc()).limit(5).all()
+    top_users_ids = [uid for uid, _n in part_rows]
+    users_map = {
+        u.id: u.username
+        for u in db.query(UserModel).filter(UserModel.id.in_(top_users_ids)).all()
+    } if top_users_ids else {}
+    top_participants = [
+        {"user_id": uid, "username": users_map.get(uid, str(uid)), "count": int(n)}
+        for uid, n in part_rows
+    ]
+
+    open_complaints = db.query(func.count(ComplaintModel.id)).filter(
+        ComplaintModel.status == "open"
+    ).scalar() or 0
+
+    return {
+        "generated_at": now.isoformat(),
+        "window_days": 30,
+        "new_users_30d": int(new_users_30d),
+        "new_procurements_30d": int(new_procurements_30d),
+        "status_breakdown": status_breakdown,
+        "payments_by_type": payments_by_type,
+        "top_cities": top_cities,
+        "top_participants": top_participants,
+        "open_complaints": int(open_complaints),
+    }
+
+
+class BroadcastRequest(BaseModel):
+    title: str
+    body: str
+    link: str = ""
+    kind: str = "system"
+
+
+@app.post("/admin/broadcast")
+async def admin_broadcast(
+    data: BroadcastRequest,
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(admin_user),
+):
+    """Send a notification to every active user. Returns the number of recipients."""
+    users = db.query(UserModel).filter(UserModel.is_active.is_(True)).all()
+    for u in users:
+        db.add(NotificationModel(
+            user_id=u.id,
+            kind=data.kind,
+            title=data.title,
+            body=data.body,
+            link=data.link,
+        ))
+    db.commit()
+    # Publish per-user events
+    for u in users:
+        await publish_event(f"room:user_{u.id}", {
+            "type": "notification",
+            "kind": data.kind,
+            "title": data.title,
+            "body": data.body,
+            "link": data.link,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    return {"sent": len(users)}
+
+
+@app.post("/procurements/{proc_id}/toggle-featured", response_model=ProcurementOut)
+async def toggle_featured(
+    proc_id: int,
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(admin_user),
+):
+    p = db.query(ProcurementModel).filter(ProcurementModel.id == proc_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procurement not found")
+    p.is_featured = not p.is_featured
+    p.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(p)
+    return _procurement_out(p)
+
+
+@app.get("/admin/activity-log")
+def admin_activity_log(
+    limit: int = Query(100, le=500),
+    db: Session = Depends(get_db),
+    _: UserModel = Depends(admin_user),
+):
+    rows = db.query(ActivityLogModel).order_by(ActivityLogModel.created_at.desc()).limit(limit).all()
+    users_map = {u.id: u.username for u in db.query(UserModel).all()}
+    return [{
+        "id": r.id,
+        "user_id": r.user_id,
+        "username": users_map.get(r.user_id, "") if r.user_id else "",
+        "action": r.action,
+        "target": r.target,
+        "detail": r.detail,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+
+
+# ── Search ───────────────────────────────────────────────────────────────────
+@app.get("/search/procurements", response_model=list[ProcurementOut])
+def search_procurements(
+    q: str = Query("", min_length=0),
+    city: Optional[str] = None,
+    category_id: Optional[int] = None,
+    status: Optional[str] = None,
+    limit: int = Query(50, le=200),
+    db: Session = Depends(get_db),
+):
+    """Full-text search across procurement title and description."""
+    query = db.query(ProcurementModel)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (ProcurementModel.title.ilike(like)) | (ProcurementModel.description.ilike(like))
+        )
+    if city:
+        query = query.filter(ProcurementModel.city.ilike(f"%{city}%"))
+    if category_id:
+        query = query.filter(ProcurementModel.category_id == category_id)
+    if status:
+        query = query.filter(ProcurementModel.status == status)
+    return [_procurement_out(p) for p in query.order_by(ProcurementModel.created_at.desc()).limit(limit).all()]
+
+
 # ── Output helpers (avoids Pydantic issues with Decimal/lazy-load) ────────────
 def _user_out(u: UserModel) -> dict:
     return {
@@ -946,4 +1873,33 @@ def _chat_msg_out(m: ChatMessageModel) -> dict:
         "msg_type": m.msg_type,
         "text": m.text,
         "timestamp": m.timestamp,
+    }
+
+
+def _review_out(r: ReviewModel) -> dict:
+    return {
+        "id": r.id,
+        "author_id": r.author_id,
+        "author_username": r.author.username if r.author else "",
+        "target_user_id": r.target_user_id,
+        "procurement_id": r.procurement_id,
+        "rating": r.rating,
+        "body": r.body or "",
+        "created_at": r.created_at,
+    }
+
+
+def _complaint_out(c: ComplaintModel) -> dict:
+    return {
+        "id": c.id,
+        "reporter_id": c.reporter_id,
+        "reporter_username": c.reporter.username if c.reporter else "",
+        "target_user_id": c.target_user_id,
+        "procurement_id": c.procurement_id,
+        "subject": c.subject or "",
+        "body": c.body or "",
+        "status": c.status,
+        "resolution": c.resolution or "",
+        "created_at": c.created_at,
+        "updated_at": c.updated_at,
     }

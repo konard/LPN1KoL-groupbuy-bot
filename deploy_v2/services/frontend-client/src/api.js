@@ -61,6 +61,27 @@ export const api = {
   listParticipants: (id) => request('GET', `/procurements/${id}/participants`),
   joinProcurement: (id, quantity) => request('POST', `/procurements/${id}/join`, { quantity }),
   leaveProcurement: (id) => request('DELETE', `/procurements/${id}/leave`),
+  getReceipt: (id) => request('GET', `/procurements/${id}/receipt`),
+  setStopAmount: (id, stop_at_amount) => request('POST', `/procurements/${id}/stop-amount`, { stop_at_amount }),
+  approveSupplier: (id, supplier_name, price_per_unit) =>
+    request('POST', `/procurements/${id}/approve-supplier`, { supplier_name, price_per_unit }),
+  closeProcurement: (id, status = 'completed') =>
+    request('POST', `/procurements/${id}/close`, { status }),
+  toggleFeatured: (id) => request('POST', `/procurements/${id}/toggle-featured`),
+  searchProcurements: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request('GET', `/search/procurements${qs ? '?' + qs : ''}`)
+  },
+
+  // ── Votes ───────────────────────────────────────────────────────────────────
+  castVote: (procId, option) => request('POST', `/procurements/${procId}/votes`, { option }),
+  voteResults: (procId) => request('GET', `/procurements/${procId}/votes`),
+
+  // ── Invitations ─────────────────────────────────────────────────────────────
+  inviteUser: (procId, invitee_id) => request('POST', `/procurements/${procId}/invitations`, { invitee_id }),
+  myInvitations: () => request('GET', '/invitations'),
+  respondInvitation: (invId, accept) =>
+    request('POST', `/invitations/${invId}/respond?accept=${accept ? 'true' : 'false'}`),
 
   // ── Categories ──────────────────────────────────────────────────────────────
   listCategories: () => request('GET', '/categories'),
@@ -77,6 +98,31 @@ export const api = {
 
   // ── Chat ────────────────────────────────────────────────────────────────────
   getRoomHistory: (room, limit = 50) => request('GET', `/chat/${room}/messages?limit=${limit}`),
+  sendChatMessage: (room, text) => request('POST', `/chat/${room}/messages`, { text }),
+  markRoomRead: (room) => request('POST', `/chat/${room}/mark-read`),
+  roomUnreadCount: (room) => request('GET', `/chat/${room}/unread-count`),
+
+  // ── Notifications ───────────────────────────────────────────────────────────
+  listNotifications: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request('GET', `/notifications${qs ? '?' + qs : ''}`)
+  },
+  unreadNotificationCount: () => request('GET', '/notifications/unread-count'),
+  markNotificationRead: (id) => request('POST', `/notifications/${id}/read`),
+  markAllNotificationsRead: () => request('POST', '/notifications/mark-all-read'),
+
+  // ── Reviews ─────────────────────────────────────────────────────────────────
+  createReview: (data) => request('POST', '/reviews', data),
+  userReviews: (userId) => request('GET', `/users/${userId}/reviews`),
+  userRating: (userId) => request('GET', `/users/${userId}/rating`),
+
+  // ── Complaints ──────────────────────────────────────────────────────────────
+  createComplaint: (data) => request('POST', '/complaints', data),
+  listComplaints: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request('GET', `/complaints${qs ? '?' + qs : ''}`)
+  },
+  updateComplaint: (id, data) => request('PATCH', `/complaints/${id}`, data),
 
   // ── Admin ───────────────────────────────────────────────────────────────────
   listUsers: (params = {}) => {
@@ -86,7 +132,15 @@ export const api = {
   getUser: (id) => request('GET', `/users/${id}`),
   updateUser: (id, data) => request('PATCH', `/users/${id}`, data),
   deleteUser: (id) => request('DELETE', `/users/${id}`),
+  searchUsers: (q, limit = 20) => request('GET', `/users/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  getBalance: (userId) => request('GET', `/users/${userId}/balance`),
+  updateBalance: (userId, amount, reason = '') =>
+    request('POST', `/users/${userId}/balance`, { amount, reason }),
   adminStats: () => request('GET', '/admin/stats'),
+  adminAnalytics: () => request('GET', '/admin/analytics'),
+  adminBroadcast: (data) => request('POST', '/admin/broadcast', data),
+  adminActivityLog: (limit = 100) => request('GET', `/admin/activity-log?limit=${limit}`),
+  sendNotification: (data) => request('POST', '/notifications', data),
 
   // ── Health ──────────────────────────────────────────────────────────────────
   health: () => request('GET', '/health'),

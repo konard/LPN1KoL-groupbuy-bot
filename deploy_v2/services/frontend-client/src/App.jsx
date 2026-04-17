@@ -5,6 +5,10 @@ import ProcurementsPage from './pages/ProcurementsPage.jsx'
 import PaymentsPage from './pages/PaymentsPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
+import NotificationsPage from './pages/NotificationsPage.jsx'
+import ComplaintsPage from './pages/ComplaintsPage.jsx'
+import InvitationsPage from './pages/InvitationsPage.jsx'
+import ProcurementDetailPage from './pages/ProcurementDetailPage.jsx'
 
 const styles = `
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,12 +21,17 @@ const PAGES = {
   chat: ChatPage,
   payments: PaymentsPage,
   profile: ProfilePage,
+  notifications: NotificationsPage,
+  complaints: ComplaintsPage,
+  invitations: InvitationsPage,
+  procurementDetail: ProcurementDetailPage,
 }
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
   const [user, setUser] = useState(null)
   const [page, setPage] = useState('dashboard')
+  const [pageParams, setPageParams] = useState({})
 
   useEffect(() => {
     if (token) {
@@ -45,12 +54,18 @@ export default function App() {
     localStorage.setItem('token', newToken)
     setToken(newToken)
     setPage('dashboard')
+    setPageParams({})
   }
 
   function handleLogout() {
     localStorage.removeItem('token')
     setToken(null)
     setUser(null)
+  }
+
+  function navigate(nextPage, params = {}) {
+    setPage(nextPage)
+    setPageParams(params)
   }
 
   if (!token || !user) {
@@ -67,7 +82,12 @@ export default function App() {
   return (
     <>
       <style>{styles}</style>
-      <PageComponent user={user} onLogout={handleLogout} onNavigate={setPage} />
+      <PageComponent
+        user={user}
+        onLogout={handleLogout}
+        onNavigate={navigate}
+        {...pageParams}
+      />
     </>
   )
 }

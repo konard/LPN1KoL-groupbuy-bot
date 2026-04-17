@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 style="margin-bottom:1rem">Activity log</h1>
+
+  <div class="card">
+    {% if rows %}
+    <table>
+      <thead>
+        <tr><th>#</th><th>When</th><th>User</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td><small>{{ r.created_at or '' }}</small></td>
+          <td>{{ r.username or ('#' ~ r.user_id if r.user_id else 'system') }}</td>
+          <td><strong>{{ r.action }}</strong></td>
+          <td>{{ r.target }}</td>
+          <td><small>{{ r.detail }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p style="color:#666">No activity recorded yet.</p>
+    {% endif %}
+  </div>
+{% endblock %}
