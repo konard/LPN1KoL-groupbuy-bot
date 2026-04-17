@@ -1,0 +1,192 @@
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ── Infrastructure ─────────────────────────────────────────────────────────
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-groupbuy}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+    logging: *default-logging
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.1
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-groupbuy}"
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "50"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging: *default-logging
+
+  # ── Application Services ───────────────────────────────────────────────────
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@pgbouncer:5432/${POSTGRES_DB:-groupbuy}"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
+    logging: *default-logging
+
+  websocket:
+    build: ./websocket
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      SERVER_ID: "ws-{{.Task.Slot}}"
+      PORT: "8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
+    logging: *default-logging
+
+  admin:
+    build: ./admin
+    restart: unless-stopped
+    environment:
+      DJANGO_SETTINGS_MODULE: django_app.settings
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-groupbuy}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      GUNICORN_WORKERS: "2"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+    logging: *default-logging
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_BACKEND_URL: /api
+        VITE_WS_URL: ws://${PUBLIC_HOST:-localhost}/ws
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+    logging: *default-logging
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - websocket
+      - admin
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128m
+    logging: *default-logging
+
+volumes:
+  pg_data:
