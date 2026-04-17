@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 style="margin-bottom:1rem">Complaints</h1>
+
+  <div class="card">
+    <div style="margin-bottom:1rem">
+      <a class="btn btn-primary" href="/complaints">All</a>
+      <a class="btn btn-warn" href="/complaints?status=open">Open</a>
+      <a class="btn btn-primary" href="/complaints?status=in_review">In review</a>
+      <a class="btn btn-primary" href="/complaints?status=resolved">Resolved</a>
+      <a class="btn btn-danger" href="/complaints?status=rejected">Rejected</a>
+    </div>
+    {% if complaints %}
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Reporter</th><th>Subject</th><th>Target user</th>
+          <th>Procurement</th><th>Status</th><th>Created</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in complaints %}
+        <tr>
+          <td>{{ c.id }}</td>
+          <td>{{ c.reporter_username }}</td>
+          <td>
+            <strong>{{ c.subject }}</strong><br>
+            <small style="color:#666">{{ c.body }}</small>
+            {% if c.resolution %}<br><em style="color:#28a745">Resolution: {{ c.resolution }}</em>{% endif %}
+          </td>
+          <td>{{ c.target_user_id or '—' }}</td>
+          <td>{{ c.procurement_id or '—' }}</td>
+          <td><span class="badge {% if c.status == 'resolved' %}badge-green{% elif c.status == 'rejected' %}badge-red{% endif %}">{{ c.status }}</span></td>
+          <td>{{ c.created_at[:10] if c.created_at else '' }}</td>
+          <td>
+            <form action="/complaints/{{ c.id }}/update" method="post" style="display:flex;gap:.2rem;flex-wrap:wrap">
+              <select name="status" style="font-size:.8rem">
+                <option value="open"{% if c.status == 'open' %} selected{% endif %}>open</option>
+                <option value="in_review"{% if c.status == 'in_review' %} selected{% endif %}>in_review</option>
+                <option value="resolved"{% if c.status == 'resolved' %} selected{% endif %}>resolved</option>
+                <option value="rejected"{% if c.status == 'rejected' %} selected{% endif %}>rejected</option>
+              </select>
+              <input name="resolution" placeholder="resolution" value="{{ c.resolution }}" style="font-size:.8rem;width:120px">
+              <button type="submit" class="btn btn-primary">Update</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p style="color:#666">No complaints found.</p>
+    {% endif %}
+  </div>
+{% endblock %}

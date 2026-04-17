@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 style="margin-bottom:1rem">Broadcast notification</h1>
+
+  {% if sent is not none %}
+    <div class="card" style="background:#d4edda;color:#155724">
+      Broadcast sent to <strong>{{ sent }}</strong> active users.
+    </div>
+  {% endif %}
+
+  <div class="card" style="max-width:600px">
+    <form action="/broadcasts" method="post" style="display:block">
+      <label style="display:block;margin-bottom:.25rem">Kind</label>
+      <select name="kind" style="width:100%;padding:.4rem;margin-bottom:.6rem">
+        <option value="system">system</option>
+        <option value="procurement">procurement</option>
+        <option value="payment">payment</option>
+      </select>
+
+      <label style="display:block;margin-bottom:.25rem">Title</label>
+      <input name="title" required style="width:100%;padding:.4rem;margin-bottom:.6rem">
+
+      <label style="display:block;margin-bottom:.25rem">Body</label>
+      <textarea name="body" required style="width:100%;padding:.4rem;min-height:100px;margin-bottom:.6rem"></textarea>
+
+      <label style="display:block;margin-bottom:.25rem">Link (optional)</label>
+      <input name="link" style="width:100%;padding:.4rem;margin-bottom:.6rem">
+
+      <button type="submit" class="btn btn-primary">Send to all active users</button>
+    </form>
+  </div>
+{% endblock %}
