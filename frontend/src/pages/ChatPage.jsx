@@ -19,7 +19,7 @@ const s = {
 
 const ROOMS = ['general', 'sales', 'support']
 
-export default function ChatPage({ user, onLogout }) {
+export default function ChatPage({ user, onLogout, onNavigate }) {
   const [room, setRoom] = useState('general')
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
@@ -68,6 +68,9 @@ export default function ChatPage({ user, onLogout }) {
           <span style={{ fontSize: '.85rem', color: connected ? '#7bed9f' : '#ff6b6b' }}>
             {connected ? '● Connected' : '○ Disconnected'}
           </span>
+          {onNavigate && (
+            <button style={{ ...s.logoutBtn, borderColor: '#a8d8ea', color: '#a8d8ea' }} onClick={() => onNavigate('procurements')}>Procurements</button>
+          )}
           <button style={s.logoutBtn} onClick={onLogout}>Logout</button>
         </span>
       </div>

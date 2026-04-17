@@ -11,10 +11,6 @@ templates = Jinja2Templates(directory="templates")
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
-async def get_token(token: str | None) -> str | None:
-    return token
-
-
 async def api_get(path: str, token: str) -> dict | list | None:
     async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=10) as client:
         r = await client.get(path, headers={"Authorization": f"Bearer {token}"})
@@ -32,7 +28,7 @@ async def api_patch(path: str, token: str, data: dict) -> bool:
 async def api_delete(path: str, token: str) -> bool:
     async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=10) as client:
         r = await client.delete(path, headers={"Authorization": f"Bearer {token}"})
-        return r.status_code == 204
+        return r.status_code in (200, 204)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -49,6 +45,39 @@ async def index(request: Request, admin_token: str | None = Cookie(default=None)
     })
 
 
+@app.get("/procurements", response_class=HTMLResponse)
+async def procurements_page(request: Request, admin_token: str | None = Cookie(default=None)):
+    if not admin_token:
+        return RedirectResponse("/login")
+    procurements = await api_get("/procurements?limit=100", admin_token) or []
+    categories = await api_get("/categories", admin_token) or []
+    return templates.TemplateResponse("procurements.html", {
+        "request": request,
+        "procurements": procurements,
+        "categories": categories,
+    })
+
+
+@app.post("/procurements/{proc_id}/status")
+async def set_procurement_status(
+    proc_id: int,
+    new_status: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+):
+    if not admin_token:
+        return RedirectResponse("/login")
+    await api_patch(f"/procurements/{proc_id}", admin_token, {"status": new_status})
+    return RedirectResponse("/procurements", status_code=302)
+
+
+@app.post("/procurements/{proc_id}/delete")
+async def delete_procurement(proc_id: int, admin_token: str | None = Cookie(default=None)):
+    if not admin_token:
+        return RedirectResponse("/login")
+    await api_delete(f"/procurements/{proc_id}", admin_token)
+    return RedirectResponse("/procurements", status_code=302)
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
@@ -59,7 +88,6 @@ async def login(response: Response, username: str = Form(...), password: str = F
     async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=10) as client:
         r = await client.post("/auth/login", json={"username": username, "password": password})
     if r.status_code != 200:
-        # Re-render with error — need a Request object; redirect instead
         resp = RedirectResponse("/login?error=1", status_code=302)
         return resp
     token = r.json()["access_token"]

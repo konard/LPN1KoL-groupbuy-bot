@@ -88,7 +88,10 @@ async def websocket_endpoint(
     user_id = str(payload.get("sub", "unknown"))
     await manager.connect(room_id, websocket, user_id)
 
-    # Send history
+    # Send in-memory history; also try to seed from backend on first connect
+    if room_id not in history:
+        asyncio.create_task(_load_history_from_backend(room_id, token))
+
     for msg in history.get(room_id, []):
         await websocket.send_json(msg)
 
@@ -136,6 +139,29 @@ async def _notify_backend(msg: dict):
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(f"{BACKEND_URL}/internal/socket-event", json=msg)
+    except Exception:
+        pass
+
+
+async def _load_history_from_backend(room_id: str, token: str):
+    """Seed in-memory history from backend on first room access (best-effort)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                f"{BACKEND_URL}/chat/{room_id}/messages",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if r.status_code == 200:
+            msgs = r.json()
+            for m in msgs:
+                backend_msg = {
+                    "type": m.get("msg_type", "message"),
+                    "room": room_id,
+                    "user_id": str(m.get("user_id", "")) if m.get("user_id") else "system",
+                    "text": m.get("text", ""),
+                    "timestamp": m.get("timestamp", ""),
+                }
+                add_to_history(room_id, backend_msg)
     except Exception:
         pass
 
