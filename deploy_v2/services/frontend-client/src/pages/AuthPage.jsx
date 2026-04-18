@@ -10,11 +10,13 @@ const s = {
   btn: { width: '100%', padding: '.75rem', background: '#007bff', color: '#fff', border: 'none', borderRadius: 4, fontSize: '1rem', cursor: 'pointer', marginBottom: '.5rem' },
   link: { background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', width: '100%', textAlign: 'center', display: 'block', marginTop: '.5rem' },
   error: { color: '#dc3545', marginBottom: '1rem', fontSize: '.9rem' },
+  hint: { color: '#6c757d', marginBottom: '1rem', fontSize: '.9rem' },
 }
 
 export default function AuthPage({ onLogin }) {
-  const [mode, setMode] = useState('login')
-  const [form, setForm] = useState({ username: '', email: '', password: '' })
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'otp'
+  const [form, setForm] = useState({ username: '', phone: '', email: '', password: '', code: '' })
+  const [emailHint, setEmailHint] = useState('')
   const [error, setError] = useState('')
 
   function set(field) {
@@ -25,13 +27,18 @@ export default function AuthPage({ onLogin }) {
     e.preventDefault()
     setError('')
     try {
-      if (mode === 'login') {
-        const { access_token } = await api.login(form.username, form.password)
+      if (mode === 'otp') {
+        const { access_token } = await api.verifyCode(form.phone, form.code)
         onLogin(access_token)
+      } else if (mode === 'login') {
+        const res = await api.login(form.phone, form.password)
+        setEmailHint(res.email_hint || '')
+        setMode('otp')
       } else {
-        await api.register(form.username, form.email, form.password)
-        const { access_token } = await api.login(form.username, form.password)
-        onLogin(access_token)
+        await api.register(form.username, form.phone, form.email, form.password)
+        const res = await api.login(form.phone, form.password)
+        setEmailHint(res.email_hint || '')
+        setMode('otp')
       }
     } catch (err) {
       setError(err.message)
@@ -41,24 +48,78 @@ export default function AuthPage({ onLogin }) {
   return (
     <div style={s.wrap}>
       <div style={s.box}>
-        <h2 style={s.title}>GroupBuy — {mode === 'login' ? 'Sign In' : 'Register'}</h2>
+        <h2 style={s.title}>
+          GroupBuy —{' '}
+          {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Register' : 'Enter Code'}
+        </h2>
         {error && <p style={s.error}>{error}</p>}
         <form onSubmit={submit}>
-          <label style={s.label}>Username</label>
-          <input style={s.input} value={form.username} onChange={set('username')} required autoFocus />
-          {mode === 'register' && (
+          {mode === 'otp' ? (
             <>
-              <label style={s.label}>Email</label>
-              <input style={s.input} type="email" value={form.email} onChange={set('email')} required />
+              <p style={s.hint}>
+                A verification code was sent to {emailHint}. Please check your email.
+              </p>
+              <label style={s.label}>Verification Code</label>
+              <input
+                style={s.input}
+                value={form.code}
+                onChange={set('code')}
+                required
+                autoFocus
+                placeholder="6-digit code"
+                maxLength={6}
+              />
+            </>
+          ) : (
+            <>
+              {mode === 'register' && (
+                <>
+                  <label style={s.label}>Username</label>
+                  <input style={s.input} value={form.username} onChange={set('username')} required />
+                </>
+              )}
+              <label style={s.label}>Phone</label>
+              <input
+                style={s.input}
+                value={form.phone}
+                onChange={set('phone')}
+                required
+                autoFocus
+                placeholder="+71234567890"
+              />
+              {mode === 'register' && (
+                <>
+                  <label style={s.label}>Email</label>
+                  <input style={s.input} type="email" value={form.email} onChange={set('email')} required />
+                </>
+              )}
+              <label style={s.label}>Password</label>
+              <input style={s.input} type="password" value={form.password} onChange={set('password')} required />
             </>
           )}
-          <label style={s.label}>Password</label>
-          <input style={s.input} type="password" value={form.password} onChange={set('password')} required />
-          <button style={s.btn} type="submit">{mode === 'login' ? 'Sign In' : 'Create Account'}</button>
+          <button style={s.btn} type="submit">
+            {mode === 'otp' ? 'Verify' : mode === 'login' ? 'Sign In' : 'Create Account'}
+          </button>
         </form>
-        <button style={s.link} onClick={() => { setMode(m => m === 'login' ? 'register' : 'login'); setError('') }}>
-          {mode === 'login' ? 'No account? Register' : 'Already have an account? Sign In'}
-        </button>
+        {mode !== 'otp' && (
+          <button
+            style={s.link}
+            onClick={() => {
+              setMode(m => m === 'login' ? 'register' : 'login')
+              setError('')
+            }}
+          >
+            {mode === 'login' ? 'No account? Register' : 'Already have an account? Sign In'}
+          </button>
+        )}
+        {mode === 'otp' && (
+          <button
+            style={s.link}
+            onClick={() => { setMode('login'); setError('') }}
+          >
+            Back to Sign In
+          </button>
+        )}
       </div>
     </div>
   )

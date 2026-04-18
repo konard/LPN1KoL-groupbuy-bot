@@ -20,6 +20,14 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 
+def _login(client, phone, password):
+    """Two-step phone-based login: POST /auth/login → POST /auth/verify-code."""
+    r = client.post("/auth/login", json={"phone": phone, "password": password})
+    assert r.status_code == 200, f"Login step 1 failed: {r.text}"
+    # In dev mode the code is printed; we retrieve it directly from the DB
+    return r  # caller reads the code from DB
+
+
 @pytest.fixture()
 def client():
     db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -29,18 +37,47 @@ def client():
     for mod in list(sys.modules):
         if mod.startswith("app"):
             sys.modules.pop(mod, None)
-    from app.main import app, SessionLocal, UserModel  # noqa: WPS433
+    from app.main import app, SessionLocal, UserModel, LoginCodeModel  # noqa: WPS433
 
     c = TestClient(app)
-    # Register alice (admin) and bob (user)
-    c.post("/auth/register", json={"username": "alice", "email": "alice@ex.com", "password": "secretpw"})
+
+    # Register alice (admin) and bob (user) with phone numbers
+    c.post("/auth/register", json={
+        "username": "alice",
+        "phone": "+70000000001",
+        "email": "alice@ex.com",
+        "password": "secretpw",
+    })
+    c.post("/auth/register", json={
+        "username": "bob",
+        "phone": "+70000000002",
+        "email": "bob@ex.com",
+        "password": "secretpw",
+    })
+
     with SessionLocal() as s:
         u = s.query(UserModel).filter_by(username="alice").first()
         u.is_admin = True
         s.commit()
-    c.post("/auth/register", json={"username": "bob", "email": "bob@ex.com", "password": "secretpw"})
-    tok_a = c.post("/auth/login", json={"username": "alice", "password": "secretpw"}).json()["access_token"]
-    tok_b = c.post("/auth/login", json={"username": "bob", "password": "secretpw"}).json()["access_token"]
+
+    def get_token(phone, password):
+        r = c.post("/auth/login", json={"phone": phone, "password": password})
+        assert r.status_code == 200, r.text
+        with SessionLocal() as s:
+            user = s.query(UserModel).filter_by(phone=phone).first()
+            code_row = (
+                s.query(LoginCodeModel)
+                .filter_by(user_id=user.id, used=False)
+                .order_by(LoginCodeModel.id.desc())
+                .first()
+            )
+            code = code_row.code
+        r2 = c.post("/auth/verify-code", json={"phone": phone, "code": code})
+        assert r2.status_code == 200, r2.text
+        return r2.json()["access_token"]
+
+    tok_a = get_token("+70000000001", "secretpw")
+    tok_b = get_token("+70000000002", "secretpw")
 
     yield c, {"Authorization": f"Bearer {tok_a}"}, {"Authorization": f"Bearer {tok_b}"}
     try:
