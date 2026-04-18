@@ -1,0 +1,909 @@
+openapi: "3.1.0"
+info:
+  title: GroupBuy Backend API
+  description: |
+    REST API for the GroupBuy platform personal account and admin panel.
+    Handles authentication, users, categories, procurements, participants,
+    payments, and chat messages.
+
+    **Swagger UI:** served at `/api/docs` by the `backend-api` container.
+
+    **Authentication:** Bearer JWT token obtained from `POST /auth/login`.
+    Pass the token in the `Authorization: Bearer <token>` header.
+  version: "1.0.0"
+  contact:
+    name: GroupBuy Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local backend-api container
+  - url: http://backend-api:8000
+    description: Internal Docker network
+
+tags:
+  - name: auth
+    description: Registration, login, token operations
+  - name: users
+    description: User profile and admin user management
+  - name: categories
+    description: Procurement categories (hierarchical)
+  - name: procurements
+    description: Group purchase lifecycle
+  - name: participants
+    description: Joining and leaving procurements
+  - name: payments
+    description: Wallet deposits, withdrawals, procurement payments
+  - name: chat
+    description: Per-room chat message history
+  - name: internal
+    description: Inter-service endpoints (not for public clients)
+  - name: ops
+    description: Health and operational endpoints
+
+paths:
+
+  # ── Auth ────────────────────────────────────────────────────────────────────
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Username or email already exists
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate and obtain a JWT access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Invalid credentials
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Return the currently authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+        "401":
+          description: Unauthenticated
+
+  # ── Users ───────────────────────────────────────────────────────────────────
+
+  /users:
+    get:
+      tags: [users]
+      summary: List all users (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserOut"
+        "403":
+          description: Admin access required
+
+  /users/{user_id}:
+    get:
+      tags: [users]
+      summary: Get user by ID (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/user_id"
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+        "404":
+          description: User not found
+    patch:
+      tags: [users]
+      summary: Update user fields (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/user_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+    delete:
+      tags: [users]
+      summary: Delete a user (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/user_id"
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Categories ──────────────────────────────────────────────────────────────
+
+  /categories:
+    get:
+      tags: [categories]
+      summary: List active categories
+      responses:
+        "200":
+          description: Category list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryOut"
+    post:
+      tags: [categories]
+      summary: Create a category (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryCreate"
+      responses:
+        "201":
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryOut"
+
+  /categories/{cat_id}:
+    delete:
+      tags: [categories]
+      summary: Soft-delete a category (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cat_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Category deactivated
+
+  # ── Procurements ─────────────────────────────────────────────────────────────
+
+  /procurements:
+    get:
+      tags: [procurements]
+      summary: List procurements with optional filters
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, active, stopped, payment, completed, cancelled]
+        - name: city
+          in: query
+          schema:
+            type: string
+        - name: category_id
+          in: query
+          schema:
+            type: integer
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Procurement list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcurementOut"
+    post:
+      tags: [procurements]
+      summary: Create a new procurement
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcurementCreate"
+      responses:
+        "201":
+          description: Procurement created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementOut"
+
+  /procurements/{proc_id}:
+    get:
+      tags: [procurements]
+      summary: Get procurement details
+      parameters:
+        - $ref: "#/components/parameters/proc_id"
+      responses:
+        "200":
+          description: Procurement details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementOut"
+        "404":
+          description: Not found
+    patch:
+      tags: [procurements]
+      summary: Update procurement (organizer or admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/proc_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcurementUpdate"
+      responses:
+        "200":
+          description: Updated procurement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementOut"
+        "403":
+          description: Not the organizer
+    delete:
+      tags: [procurements]
+      summary: Delete a procurement (organizer or admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/proc_id"
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Participants ─────────────────────────────────────────────────────────────
+
+  /procurements/{proc_id}/participants:
+    get:
+      tags: [participants]
+      summary: List participants of a procurement
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/proc_id"
+      responses:
+        "200":
+          description: Participant list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ParticipantOut"
+
+  /procurements/{proc_id}/join:
+    post:
+      tags: [participants]
+      summary: Join a procurement
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/proc_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParticipantCreate"
+      responses:
+        "201":
+          description: Joined successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParticipantOut"
+        "400":
+          description: Not active or already joined
+
+  /procurements/{proc_id}/leave:
+    delete:
+      tags: [participants]
+      summary: Leave a procurement
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/proc_id"
+      responses:
+        "204":
+          description: Left successfully
+        "404":
+          description: Not a participant
+
+  # ── Payments ─────────────────────────────────────────────────────────────────
+
+  /payments:
+    get:
+      tags: [payments]
+      summary: List payments for the current user (or all if admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaymentOut"
+    post:
+      tags: [payments]
+      summary: Create a payment (deposit, withdrawal, procurement_payment)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentCreate"
+      responses:
+        "201":
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOut"
+        "400":
+          description: Invalid type or insufficient balance
+
+  /payments/{pay_id}:
+    get:
+      tags: [payments]
+      summary: Get a single payment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pay_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOut"
+        "403":
+          description: Forbidden (not owner or admin)
+        "404":
+          description: Not found
+
+  # ── Chat ─────────────────────────────────────────────────────────────────────
+
+  /chat/{room}/messages:
+    get:
+      tags: [chat]
+      summary: Get message history for a room
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: room
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Room identifier (e.g. procurement ID or "admin")
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        "200":
+          description: Ordered message list (oldest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatMessageOut"
+
+  # ── Internal ──────────────────────────────────────────────────────────────────
+
+  /internal/socket-event:
+    post:
+      tags: [internal]
+      summary: Persist a WebSocket event sent by the socket-broker
+      description: |
+        Called by `socket-broker` after a user sends a message so it is saved
+        to the database. Not intended for public clients.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocketEvent"
+      responses:
+        "204":
+          description: Event persisted
+
+  # ── Health ────────────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags: [ops]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  database:
+                    type: string
+                    example: ok
+
+# ── WebSocket (informational) ─────────────────────────────────────────────────
+# WebSocket connections are handled by the socket-broker service, not this API.
+# Connect to:  ws://localhost:8001/ws/{room_id}?token=<JWT>
+#
+# On connect: receives up to 50 messages of in-room history, then live events.
+# Send:  { "text": "Hello!" }
+# Receive: { "type": "message"|"system", "room": "...", "user_id": "...",
+#            "text": "...", "timestamp": "2024-01-01T00:00:00+00:00" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    user_id:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: integer
+    proc_id:
+      name: proc_id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  schemas:
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          maxLength: 64
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          description: Seconds until expiry
+
+    # ── Users ─────────────────────────────────────────────────────────────────
+    UserOut:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        is_active:
+          type: boolean
+        is_admin:
+          type: boolean
+        balance:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+
+    UserUpdate:
+      type: object
+      properties:
+        is_active:
+          type: boolean
+        is_admin:
+          type: boolean
+        balance:
+          type: number
+
+    # ── Categories ────────────────────────────────────────────────────────────
+    CategoryOut:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+        icon:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          default: ""
+        parent_id:
+          type: integer
+          nullable: true
+        icon:
+          type: string
+          default: ""
+
+    # ── Procurements ──────────────────────────────────────────────────────────
+    ProcurementOut:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        category_id:
+          type: integer
+          nullable: true
+        organizer_id:
+          type: integer
+        organizer_username:
+          type: string
+        city:
+          type: string
+        delivery_address:
+          type: string
+        target_amount:
+          type: number
+        current_amount:
+          type: number
+        stop_at_amount:
+          type: number
+          nullable: true
+        unit:
+          type: string
+        price_per_unit:
+          type: number
+          nullable: true
+        commission_percent:
+          type: number
+        status:
+          type: string
+          enum: [draft, active, stopped, payment, completed, cancelled]
+        deadline:
+          type: string
+          format: date-time
+        image_url:
+          type: string
+        is_featured:
+          type: boolean
+        participant_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProcurementCreate:
+      type: object
+      required: [title, target_amount, deadline]
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          default: ""
+        category_id:
+          type: integer
+          nullable: true
+        city:
+          type: string
+          default: ""
+        delivery_address:
+          type: string
+          default: ""
+        target_amount:
+          type: number
+        stop_at_amount:
+          type: number
+          nullable: true
+        unit:
+          type: string
+          default: units
+        price_per_unit:
+          type: number
+          nullable: true
+        commission_percent:
+          type: number
+          default: 0
+        deadline:
+          type: string
+          format: date-time
+        image_url:
+          type: string
+          default: ""
+        is_featured:
+          type: boolean
+          default: false
+
+    ProcurementUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, stopped, payment, completed, cancelled]
+        city:
+          type: string
+        delivery_address:
+          type: string
+        deadline:
+          type: string
+          format: date-time
+        image_url:
+          type: string
+        is_featured:
+          type: boolean
+
+    # ── Participants ──────────────────────────────────────────────────────────
+    ParticipantOut:
+      type: object
+      properties:
+        id:
+          type: integer
+        procurement_id:
+          type: integer
+        user_id:
+          type: integer
+        username:
+          type: string
+        quantity:
+          type: number
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [pending, confirmed, paid, delivered, cancelled]
+        is_active:
+          type: boolean
+        joined_at:
+          type: string
+          format: date-time
+
+    ParticipantCreate:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: number
+          minimum: 0.01
+
+    # ── Payments ──────────────────────────────────────────────────────────────
+    PaymentOut:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        procurement_id:
+          type: integer
+          nullable: true
+        payment_type:
+          type: string
+          enum: [deposit, withdrawal, procurement_payment]
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [pending, succeeded, failed, refunded]
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    PaymentCreate:
+      type: object
+      required: [payment_type, amount]
+      properties:
+        payment_type:
+          type: string
+          enum: [deposit, withdrawal, procurement_payment]
+        amount:
+          type: number
+          minimum: 0.01
+        procurement_id:
+          type: integer
+          nullable: true
+        description:
+          type: string
+          default: ""
+
+    # ── Chat ──────────────────────────────────────────────────────────────────
+    ChatMessageOut:
+      type: object
+      properties:
+        id:
+          type: integer
+        room:
+          type: string
+        user_id:
+          type: integer
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        msg_type:
+          type: string
+          enum: [message, system]
+        text:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+    SocketEvent:
+      type: object
+      required: [type, room, user_id, text, timestamp]
+      properties:
+        type:
+          type: string
+        room:
+          type: string
+        user_id:
+          type: string
+        text:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

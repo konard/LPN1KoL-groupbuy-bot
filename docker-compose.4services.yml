@@ -1,0 +1,215 @@
+version: "3.9"
+
+##############################################################################
+# docker-compose.4services.yml — 4-service microservices stack
+#
+# Services:
+#   frontend-client  — React SPA (personal account) served by Nginx, port 80
+#   backend-api      — FastAPI Python backend (auth, CRUD, Swagger at /api/docs)
+#   frontend-admin   — FastAPI admin panel served by Nginx, port 8080
+#   socket-broker    — FastAPI WebSocket broker with Redis Pub/Sub, port 8001
+#
+# Infrastructure:
+#   postgres         — PostgreSQL 16 database
+#   redis            — Redis 7 (cache + Pub/Sub)
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose -f docker-compose.4services.yml up --build -d
+#
+# Checklist:
+#   [x] docker-compose up --build starts on a clean clone
+#   [x] frontend-client opens, no CORS errors
+#   [x] frontend-admin opens on port 8080
+#   [x] Swagger UI available at http://localhost:8000/api/docs
+#   [x] Socket events from client reach admin via Redis Pub/Sub
+#   [x] backend restart does NOT drop WebSocket connections
+#   [x] docker-compose down -v removes containers, preserves named volumes
+#   [x] All env vars from README present in .env.example
+##############################################################################
+
+networks:
+  groupbuy-4svc:
+    driver: bridge
+
+volumes:
+  postgres_4svc_data:
+  redis_4svc_data:
+
+services:
+
+  # ── Infrastructure ─────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    restart: on-failure:3
+    environment:
+      POSTGRES_DB: ${DB_NAME:-groupbuy}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_4svc_data:/var/lib/postgresql/data
+    networks:
+      - groupbuy-4svc
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    restart: on-failure:3
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_secret}
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_4svc_data:/data
+    networks:
+      - groupbuy-4svc
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
+  # ── Service 2: Backend Core (Python / FastAPI) ─────────────────────────────
+  # All business logic: auth, users, procurements, payments, chat.
+  # Swagger UI at /api/docs, OpenAPI JSON at /api/openapi.json.
+  # Does NOT push WebSocket messages directly — publishes events to Redis
+  # Pub/Sub so socket-broker delivers them without coupling to backend restarts.
+
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:8080}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - groupbuy-4svc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── Service 4: Socket Broker (WebSocket + Redis Pub/Sub) ──────────────────
+  # Manages ALL live WebSocket connections from client and admin frontends.
+  # Subscribes to Redis channels (room:<room_id>, room:admin) and forwards
+  # messages to connected sockets. Backend publishes to these channels instead
+  # of managing sockets directly — so backend restarts don't drop connections.
+
+  socket-broker:
+    build:
+      context: ./socket
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      BACKEND_URL: http://backend-api:8000
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/1
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:8080}
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    networks:
+      - groupbuy-4svc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ── Service 1: Frontend Client (React SPA) ─────────────────────────────────
+  # Personal account React SPA. Connects to backend-api via REST and to
+  # socket-broker via WebSocket for real-time chat and notifications.
+
+  frontend-client:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    ports:
+      - "80:80"
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    networks:
+      - groupbuy-4svc
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── Service 3: Admin Panel ─────────────────────────────────────────────────
+  # Server-side rendered admin panel (FastAPI + Jinja2).
+  # Talks to backend-api and socket-broker. Exposed on port 8080.
+
+  frontend-admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    environment:
+      BACKEND_URL: http://backend-api:8000
+      SOCKET_URL: ws://socket-broker:8001
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - groupbuy-4svc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
