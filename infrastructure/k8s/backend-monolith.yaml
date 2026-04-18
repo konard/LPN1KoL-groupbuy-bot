@@ -1,0 +1,137 @@
+---
+# backend-monolith: Python 3.12 + FastAPI
+# Consolidates: auth, purchase, payment, reputation
+# Single PostgreSQL instance (postgres-monolith) with per-module schemas
+# Kafka producer only — publishes monolith.* events for analytics/search/notification consumers
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-monolith
+  namespace: groupbuy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-monolith
+  template:
+    metadata:
+      labels:
+        app: backend-monolith
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until nc -z postgres-monolith 5432; do echo waiting for postgres-monolith; sleep 2; done"
+      containers:
+        - name: backend-monolith
+          image: groupbuy/backend-monolith:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4000
+          env:
+            - name: PORT
+              value: "4000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-monolith-secret
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: jwt-algorithm
+            - name: JWT_EXPIRES_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: jwt-expires-minutes
+            - name: JWT_REFRESH_EXPIRES_DAYS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: jwt-refresh-expires-days
+            - name: BCRYPT_ROUNDS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: bcrypt-rounds
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: kafka-brokers
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: kafka-client-id
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-monolith-config
+                  key: notification-service-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-monolith
+  namespace: groupbuy
+spec:
+  selector:
+    app: backend-monolith
+  ports:
+    - port: 4000
+      targetPort: 4000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-monolith-config
+  namespace: groupbuy
+data:
+  jwt-algorithm: "HS256"
+  jwt-expires-minutes: "15"
+  jwt-refresh-expires-days: "7"
+  bcrypt-rounds: "10"
+  kafka-brokers: "kafka:9092"
+  kafka-client-id: "backend-monolith"
+  notification-service-url: "http://notification-service:4005"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-monolith-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  database-url: "postgresql+asyncpg://monolith_user:monolith_password_change_me@postgres-monolith:5432/monolith_db"

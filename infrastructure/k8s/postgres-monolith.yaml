@@ -1,0 +1,89 @@
+---
+# Single PostgreSQL instance for backend-monolith
+# Replaces: postgres-auth, postgres-purchase, postgres-payment, postgres-reputation
+# Uses PostgreSQL schemas (auth, purchase, payment, reputation) for module isolation
+# Alembic manages migrations for all schemas from a single migrations/ directory
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-monolith
+  namespace: groupbuy
+spec:
+  serviceName: postgres-monolith
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-monolith
+  template:
+    metadata:
+      labels:
+        app: postgres-monolith
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: monolith_db
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-monolith-secret
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-monolith-secret
+                  key: password
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "monolith_user", "-d", "monolith_db"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "monolith_user", "-d", "monolith_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-monolith
+  namespace: groupbuy
+spec:
+  selector:
+    app: postgres-monolith
+  ports:
+    - port: 5432
+  clusterIP: None
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-monolith-secret
+  namespace: groupbuy
+type: Opaque
+stringData:
+  username: monolith_user
+  password: monolith_password_change_me

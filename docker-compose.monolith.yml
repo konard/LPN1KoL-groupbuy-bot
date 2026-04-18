@@ -1,0 +1,522 @@
+version: "3.9"
+
+##############################################################################
+# docker-compose.monolith.yml — consolidated monolith architecture
+#
+# Architecture changes vs docker-compose.microservices.yml:
+#   REMOVED: auth-service, purchase-service, payment-service, reputation-service
+#   ADDED:   backend-monolith (Python 3.12 + FastAPI)
+#              - modules: auth, purchase, payment, reputation
+#              - single PostgreSQL instance (monolith_db) with schemas per module
+#              - Alembic migrations in migrations/
+#              - Kafka producer only (no consumers in monolith)
+#
+# Unchanged infrastructure services:
+#   gateway, chat-service (Go + Centrifugo), analytics-service (Python FastAPI),
+#   notification-service (Node.js), search-service (Go + Elasticsearch)
+#
+# Network: all services share backend-network. Gateway is the only service
+#          that exposes ports 80/443 to the outside world (port 3000 for dev).
+##############################################################################
+
+networks:
+  backend-network:
+    driver: bridge
+
+volumes:
+  postgres_monolith_data:
+  postgres_chat_data:
+  elasticsearch_data:
+  redis_data:
+  kafka_data:
+  zookeeper_data:
+  clickhouse_data:
+  minio_data:
+  chat_media_data:
+
+services:
+  # ─────────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────────
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: "-Xmx64m -Xms64m"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | timeout 5 bash -c 'cat > /dev/tcp/localhost/2181' && echo OK"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+      # Monolith event topics (auto-created by Kafka when producers first publish)
+      # Prefixed with "monolith." per architecture requirements:
+      #   monolith.purchase.created, monolith.payment.success,
+      #   monolith.payment.deposited, monolith.payment.escrow_created,
+      #   monolith.reputation.review_created
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    networks:
+      - backend-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Single PostgreSQL instance for the monolith (schemas: auth, purchase, payment, reputation)
+  postgres-monolith:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${MONOLITH_DB_NAME:-monolith_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_monolith_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  postgres-chat:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${CHAT_DB_NAME:-chat_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_chat_data:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret} --maxmemory 200mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    environment:
+      CLICKHOUSE_DB: chat_history
+      CLICKHOUSE_USER: clickhouse_user
+      CLICKHOUSE_PASSWORD: clickhouse_password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio_admin
+      MINIO_ROOT_PASSWORD: minio_password
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    volumes:
+      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json
+    command: centrifugo -c /centrifugo/config.json
+    environment:
+      CENTRIFUGO_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+    ports:
+      - "8000:8000"
+      - "9001:9001"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  # ─────────────────────────────────────────────
+  # Backend Monolith (auth + purchase + payment + reputation)
+  # ─────────────────────────────────────────────
+
+  backend-monolith:
+    build:
+      context: ./services/backend-monolith
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-monolith:5432/${MONOLITH_DB_NAME:-monolith_db}
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRES_MINUTES: 15
+      JWT_REFRESH_EXPIRES_DAYS: 7
+      BCRYPT_ROUNDS: 10
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: backend-monolith
+      NOTIFICATION_SERVICE_URL: http://notification-service:4005
+    depends_on:
+      postgres-monolith:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 256M
+
+  # ─────────────────────────────────────────────
+  # Infrastructure Services (unchanged)
+  # ─────────────────────────────────────────────
+
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      # Monolith handles auth, purchases, payments (wallets/escrow/commission), reputation
+      AUTH_SERVICE_URL: http://backend-monolith:4000
+      PURCHASE_SERVICE_URL: http://backend-monolith:4000
+      PAYMENT_SERVICE_URL: http://backend-monolith:4000
+      REPUTATION_SERVICE_URL: http://backend-monolith:4000
+      # Unchanged infrastructure services
+      CHAT_SERVICE_URL: http://chat-service:4004
+      SEARCH_SERVICE_URL: http://search-service:4007
+      ANALYTICS_SERVICE_URL: http://analytics-service:4006
+      NOTIFICATION_SERVICE_URL: http://notification-service:4005
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-60}
+      VOTING_RATE_LIMIT_RPM: ${VOTING_RATE_LIMIT_RPM:-120}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-monolith:
+        condition: service_healthy
+      chat-service:
+        condition: service_started
+      search-service:
+        condition: service_started
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  chat-service:
+    build:
+      context: ./services/chat-service
+      dockerfile: Dockerfile
+    ports:
+      - "4004:4004"
+    environment:
+      PORT: 4004
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-chat:5432/${CHAT_DB_NAME:-chat_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      CENTRIFUGO_URL: http://centrifugo:8000
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      CLICKHOUSE_DSN: clickhouse://clickhouse_user:clickhouse_password@clickhouse:9000/chat_history
+      MEDIA_STORAGE_DIR: /app/media
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-/api/v1/chat/media}
+    volumes:
+      - chat_media_data:/app/media
+    depends_on:
+      postgres-chat:
+        condition: service_healthy
+      centrifugo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    ports:
+      - "4005:4005"
+    environment:
+      PORT: 4005
+      # Consumes from monolith.* topics
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: notification-group
+      CENTRIFUGO_URL: http://centrifugo:8000
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-notifications@example.com}
+      SMTP_PASS: ${SMTP_PASS:-smtp_password}
+      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-fcm_server_key_placeholder}
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      WHATSAPP_API_URL: "${WHATSAPP_API_URL:-}"
+      WHATSAPP_ACCESS_TOKEN: "${WHATSAPP_ACCESS_TOKEN:-}"
+      WHATSAPP_PHONE_NUMBER_ID: "${WHATSAPP_PHONE_NUMBER_ID:-}"
+      WHATSAPP_VERIFY_TOKEN: "${WHATSAPP_VERIFY_TOKEN:-}"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      centrifugo:
+        condition: service_healthy
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 48M
+
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    ports:
+      - "4006:4006"
+    environment:
+      PORT: 4006
+      # Consumes from monolith.* topics (monolith.purchase.created, monolith.payment.success, etc.)
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: analytics-group
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minio_admin
+      S3_SECRET_KEY: minio_password
+      S3_BUCKET: analytics-reports
+      CLICKHOUSE_DSN: clickhouse://clickhouse_user:clickhouse_password@clickhouse:9000/chat_history
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  search-service:
+    build:
+      context: ./services/search-service
+      dockerfile: Dockerfile
+    ports:
+      - "4007:4007"
+    environment:
+      PORT: 4007
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      # Consumes from monolith.purchase.created to index purchases
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  # ─────────────────────────────────────────────
+  # Monitoring
+  # ─────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/dashboard.json:/var/lib/grafana/dashboards/main.json
+    ports:
+      - "3001:3000"
+    networks:
+      - backend-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
