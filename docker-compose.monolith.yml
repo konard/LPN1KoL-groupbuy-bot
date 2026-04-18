@@ -3,24 +3,34 @@ version: "3.9"
 ##############################################################################
 # docker-compose.monolith.yml — consolidated monolith architecture
 #
-# Architecture changes vs docker-compose.microservices.yml:
-#   REMOVED: auth-service, purchase-service, payment-service, reputation-service
-#   ADDED:   backend-monolith (Python 3.12 + FastAPI)
-#              - modules: auth, purchase, payment, reputation
-#              - single PostgreSQL instance (monolith_db) with schemas per module
-#              - Alembic migrations in migrations/
-#              - Kafka producer only (no consumers in monolith)
+# Architecture:
+#   backend-monolith  — Python 3.12 + FastAPI
+#                       modules: auth, purchase, payment, reputation
+#                       includes core/ (Django utilities) and core-rust/ (compiled
+#                       via PyO3 multi-stage build: Rust → .so → Python slim image)
+#                       single PostgreSQL 15 (schemas: auth, purchase, payment, reputation)
+#                       Alembic migrations, Kafka producer only (no in-process consumers)
 #
-# Unchanged infrastructure services:
-#   gateway, chat-service (Go + Centrifugo), analytics-service (Python FastAPI),
-#   notification-service (Node.js), search-service (Go + Elasticsearch)
+#   admin-backend     — NestJS, read-only/CRUD access to monolith DB
+#   admin-frontend    — React static build served by Nginx; proxies /api/admin/* to admin-backend
+#   user-frontend     — Next.js (SSR); proxies /api/* directly to backend-monolith (bypasses gateway)
+#   chat              — Go + Centrifugo; Redis for Centrifugo persistence
+#   gateway           — Go (gorilla/mux) API gateway
+#   analytics         — Python FastAPI
+#   notification      — Node.js
+#   search            — Go + Elasticsearch
 #
-# Network: all services share backend-network. Gateway is the only service
-#          that exposes ports 80/443 to the outside world (port 3000 for dev).
+# Networks:
+#   backend-network   — internal service communication
+#   frontend-network  — frontend ↔ backend-monolith / admin-backend
+#
+# Sensitive vars are read from .env (see .env.monolith.example).
 ##############################################################################
 
 networks:
   backend-network:
+    driver: bridge
+  frontend-network:
     driver: bridge
 
 volumes:
@@ -76,8 +86,7 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
-      # Monolith event topics (auto-created by Kafka when producers first publish)
-      # Prefixed with "monolith." per architecture requirements:
+      # Topics published by the monolith (auto-created on first publish):
       #   monolith.purchase.created, monolith.payment.success,
       #   monolith.payment.deposited, monolith.payment.escrow_created,
       #   monolith.reputation.review_created
@@ -116,9 +125,9 @@ services:
         limits:
           memory: 128M
 
-  # Single PostgreSQL instance for the monolith (schemas: auth, purchase, payment, reputation)
+  # Single PostgreSQL 15 instance for the monolith (schemas: auth, purchase, payment, reputation)
   postgres-monolith:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     environment:
       POSTGRES_DB: ${MONOLITH_DB_NAME:-monolith_db}
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -141,7 +150,7 @@ services:
           memory: 256M
 
   postgres-chat:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     environment:
       POSTGRES_DB: ${CHAT_DB_NAME:-chat_db}
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -163,6 +172,7 @@ services:
         limits:
           memory: 128M
 
+  # Redis — Centrifugo persistence engine + general cache
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret} --maxmemory 200mb --maxmemory-policy allkeys-lru
@@ -245,6 +255,7 @@ services:
         limits:
           memory: 640M
 
+  # Centrifugo uses Redis as persistence engine for WebSocket chat history
   centrifugo:
     image: centrifugo/centrifugo:v5
     volumes:
@@ -274,14 +285,18 @@ services:
 
   # ─────────────────────────────────────────────
   # Backend Monolith (auth + purchase + payment + reputation)
+  # Includes core/ (Django utilities) and core-rust/ (compiled via PyO3)
   # ─────────────────────────────────────────────
 
   backend-monolith:
     build:
-      context: ./services/backend-monolith
-      dockerfile: Dockerfile
+      # Build context is repo root so core/ and core-rust/ are accessible
+      context: .
+      dockerfile: backend-monolith/Dockerfile
     ports:
       - "4000:4000"
+    env_file:
+      - .env
     environment:
       PORT: 4000
       DATABASE_URL: postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-monolith:5432/${MONOLITH_DB_NAME:-monolith_db}
@@ -300,6 +315,7 @@ services:
         condition: service_healthy
     networks:
       - backend-network
+      - frontend-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
@@ -314,7 +330,100 @@ services:
           memory: 256M
 
   # ─────────────────────────────────────────────
-  # Infrastructure Services (unchanged)
+  # Admin Panel (NestJS backend + React/Nginx frontend)
+  # ─────────────────────────────────────────────
+
+  # NestJS admin backend — read-only/CRUD access to monolith DB
+  # JWT secret is shared with backend-monolith for unified auth
+  admin-backend:
+    build:
+      context: ./admin-backend
+      dockerfile: Dockerfile
+    ports:
+      - "4010:4010"
+    env_file:
+      - .env
+    environment:
+      PORT: 4010
+      # Read-only connection to monolith PostgreSQL
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-monolith:5432/${MONOLITH_DB_NAME:-monolith_db}
+      # Shared JWT secret for token validation
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      NODE_ENV: production
+    depends_on:
+      postgres-monolith:
+        condition: service_healthy
+      backend-monolith:
+        condition: service_healthy
+    networks:
+      - backend-network
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4010/api/admin/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # React static admin frontend served by Nginx
+  # Nginx proxies /api/admin/* to admin-backend
+  admin-frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      admin-backend:
+        condition: service_started
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  # ─────────────────────────────────────────────
+  # User Personal Account (Next.js SSR)
+  # /api/* proxied directly to backend-monolith (bypasses gateway)
+  # ─────────────────────────────────────────────
+
+  user-frontend:
+    build:
+      context: ./user-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      # Next.js rewrites /api/* → backend-monolith (see next.config.js)
+      BACKEND_MONOLITH_URL: http://backend-monolith:4000
+    depends_on:
+      backend-monolith:
+        condition: service_healthy
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ─────────────────────────────────────────────
+  # Infrastructure Services (unchanged from microservices layout)
   # ─────────────────────────────────────────────
 
   gateway:
@@ -322,16 +431,17 @@ services:
       context: ./services/gateway
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3001:3000"
+    env_file:
+      - .env
     environment:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      # Monolith handles auth, purchases, payments (wallets/escrow/commission), reputation
+      # Monolith handles auth, purchases, payments, reputation
       AUTH_SERVICE_URL: http://backend-monolith:4000
       PURCHASE_SERVICE_URL: http://backend-monolith:4000
       PAYMENT_SERVICE_URL: http://backend-monolith:4000
       REPUTATION_SERVICE_URL: http://backend-monolith:4000
-      # Unchanged infrastructure services
       CHAT_SERVICE_URL: http://chat-service:4004
       SEARCH_SERVICE_URL: http://search-service:4007
       ANALYTICS_SERVICE_URL: http://analytics-service:4006
@@ -358,12 +468,15 @@ services:
         limits:
           memory: 32M
 
+  # Chat service — Go + Centrifugo; Redis is the Centrifugo persistence engine
   chat-service:
     build:
       context: ./services/chat-service
       dockerfile: Dockerfile
     ports:
       - "4004:4004"
+    env_file:
+      - .env
     environment:
       PORT: 4004
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-chat:5432/${CHAT_DB_NAME:-chat_db}
@@ -396,6 +509,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "4005:4005"
+    env_file:
+      - .env
     environment:
       PORT: 4005
       # Consumes from monolith.* topics
@@ -433,9 +548,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "4006:4006"
+    env_file:
+      - .env
     environment:
       PORT: 4006
-      # Consumes from monolith.* topics (monolith.purchase.created, monolith.payment.success, etc.)
+      # Consumes monolith.* Kafka topics
       KAFKA_BROKERS: kafka:9092
       KAFKA_GROUP_ID: analytics-group
       S3_ENDPOINT: http://minio:9000
@@ -466,7 +583,7 @@ services:
       PORT: 4007
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-      # Consumes from monolith.purchase.created to index purchases
+      # Consumes monolith.purchase.created to index purchases
       KAFKA_BROKERS: kafka:9092
     depends_on:
       elasticsearch:
@@ -510,7 +627,7 @@ services:
     volumes:
       - ./monitoring/grafana/dashboard.json:/var/lib/grafana/dashboards/main.json
     ports:
-      - "3001:3000"
+      - "3002:3000"
     networks:
       - backend-network
     depends_on:

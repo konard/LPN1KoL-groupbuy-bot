@@ -1,0 +1,26 @@
+{
+  "name": "admin-backend",
+  "version": "1.0.0",
+  "description": "Admin panel backend (NestJS) — read-only access to monolith DB",
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main",
+    "start:dev": "nest start --watch"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
+    "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/typeorm": "^10.0.0",
+    "pg": "^8.11.0",
+    "typeorm": "^0.3.17",
+    "jsonwebtoken": "^9.0.0",
+    "reflect-metadata": "^0.1.13",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.0.0",
+    "@nestjs/schematics": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}
