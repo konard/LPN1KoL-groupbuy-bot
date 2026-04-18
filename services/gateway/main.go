@@ -283,26 +283,36 @@ func (g *Gateway) buildRouter() http.Handler {
 
 	// Public routes (no JWT required)
 	r.HandleFunc("/health", g.healthHandler).Methods(http.MethodGet)
+	// /api/v1/auth/* → backend-monolith /auth/*
 	r.PathPrefix("/api/v1/auth/").Handler(
-		http.StripPrefix("/api/v1/auth", g.proxyTo("auth")),
+		http.StripPrefix("/api/v1", g.proxyTo("auth")),
 	).Methods(http.MethodPost, http.MethodGet)
 
 	// Protected routes
 	protected := r.PathPrefix("/api/v1").Subrouter()
 	protected.Use(g.jwtMiddleware)
 
+	// /api/v1/purchases/* → backend-monolith /purchases/*
 	protected.PathPrefix("/purchases").Handler(
-		http.StripPrefix("/api/v1/purchases", g.proxyTo("purchase")),
+		http.StripPrefix("/api/v1", g.proxyTo("purchase")),
 	)
+	// /api/v1/voting/* → backend-monolith /purchases/* (voting is part of purchases)
 	protected.PathPrefix("/voting").Handler(
 		http.StripPrefix("/api/v1/voting", g.proxyTo("purchase")),
 	)
+	// /api/v1/payments/* → backend-monolith /wallets/*
 	protected.PathPrefix("/payments").Handler(
 		http.StripPrefix("/api/v1/payments", g.proxyTo("payment")),
 	)
+	// /api/v1/wallets/* → backend-monolith /wallets/*
+	protected.PathPrefix("/wallets").Handler(
+		http.StripPrefix("/api/v1", g.proxyTo("payment")),
+	)
+	// /api/v1/escrow/* → backend-monolith /escrow/*
 	protected.PathPrefix("/escrow").Handler(
 		http.StripPrefix("/api/v1", g.proxyTo("payment")),
 	)
+	// /api/v1/commission/* → backend-monolith /commission/* (future use)
 	protected.PathPrefix("/commission").Handler(
 		http.StripPrefix("/api/v1", g.proxyTo("payment")),
 	)
@@ -312,11 +322,13 @@ func (g *Gateway) buildRouter() http.Handler {
 	protected.PathPrefix("/search").Handler(
 		http.StripPrefix("/api/v1/search", g.proxyTo("search")),
 	)
+	// /api/v1/reputation/* → backend-monolith /reputation/*
 	protected.PathPrefix("/reputation").Handler(
 		http.StripPrefix("/api/v1", g.proxyTo("reputation")),
 	)
+	// /api/v1/reviews/* → backend-monolith /reputation/reviews/*
 	protected.PathPrefix("/reviews").Handler(
-		http.StripPrefix("/api/v1", g.proxyTo("reputation")),
+		http.StripPrefix("/api/v1/reviews", g.proxyTo("reputation")),
 	)
 	protected.PathPrefix("/complaints").Handler(
 		http.StripPrefix("/api/v1", g.proxyTo("reputation")),

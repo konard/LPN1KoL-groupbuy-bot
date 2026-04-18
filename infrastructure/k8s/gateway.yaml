@@ -30,14 +30,24 @@ spec:
                 secretKeyRef:
                   name: jwt-secret
                   key: secret
+            # Monolith handles auth, purchases, payments (wallets/escrow), reputation
             - name: AUTH_SERVICE_URL
-              value: "http://auth-service:4001"
+              value: "http://backend-monolith:4000"
             - name: PURCHASE_SERVICE_URL
-              value: "http://purchase-service:4002"
+              value: "http://backend-monolith:4000"
             - name: PAYMENT_SERVICE_URL
-              value: "http://payment-service:4003"
+              value: "http://backend-monolith:4000"
+            - name: REPUTATION_SERVICE_URL
+              value: "http://backend-monolith:4000"
+            # Unchanged infrastructure services
             - name: CHAT_SERVICE_URL
               value: "http://chat-service:4004"
+            - name: SEARCH_SERVICE_URL
+              value: "http://search-service:4007"
+            - name: ANALYTICS_SERVICE_URL
+              value: "http://analytics-service:4006"
+            - name: NOTIFICATION_SERVICE_URL
+              value: "http://notification-service:4005"
             - name: REDIS_ADDR
               value: "redis:6379"
             - name: REDIS_PASSWORD
