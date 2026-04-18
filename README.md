@@ -883,6 +883,100 @@ docker compose -f docker-compose.prod.yml exec core python manage.py migrate
 4. Run tests
 5. Submit a pull request
 
+## 🐳 Развёртывание в Docker (4 микросервиса)
+
+Упрощённый стек из 4 сервисов, спроектированный согласно требованиям issue #33.
+
+### Архитектура
+
+| Контейнер | Технология | Назначение | Порт |
+|---|---|---|---|
+| `frontend-client` | Vite/React + Nginx | SPA личного кабинета | 80 |
+| `backend-api` | FastAPI (Python) | Бизнес-логика, REST, Swagger | 8000 |
+| `frontend-admin` | FastAPI + Jinja2 | Админ-панель | 8080 |
+| `socket-broker` | FastAPI + Redis Pub/Sub | WebSocket-брокер | 8001 |
+| `postgres` | PostgreSQL 16 | БД (общая) | — |
+| `redis` | Redis 7 | Кэш + Pub/Sub | — |
+
+**Ключевые свойства:**
+
+- `backend-api` публикует события в Redis Pub/Sub вместо прямой отправки в сокеты — перезапуск бэкенда **не** разрывает WebSocket-соединения клиентов.
+- `socket-broker` подписывается на каналы `room:<room_id>` и `room:admin` в Redis и рассылает сообщения всем подключённым клиентам.
+- Swagger UI доступен по адресу `http://localhost:8000/api/docs`, OpenAPI-спецификация — в `docs/openapi.yaml`.
+
+### Быстрый старт (чистая машина)
+
+```bash
+# 1. Клонировать репозиторий
+git clone https://github.com/LPN1KoL/groupbuy-bot.git
+cd groupbuy-bot
+
+# 2. Создать файл окружения
+cp .env.example .env
+# Отредактируйте .env: задайте SECRET_KEY, DB_PASSWORD, REDIS_PASSWORD
+
+# 3. Собрать и запустить
+docker compose -f docker-compose.4services.yml up --build -d
+
+# 4. Проверить состояние
+docker compose -f docker-compose.4services.yml ps
+```
+
+### Адреса сервисов
+
+| Адрес | Описание |
+|---|---|
+| `http://localhost` | Личный кабинет (React SPA) |
+| `http://localhost:8080` | Админ-панель |
+| `http://localhost:8000/api/docs` | Swagger UI |
+| `http://localhost:8000/api/openapi.json` | OpenAPI JSON |
+| `ws://localhost:8001/ws/{room_id}?token=<JWT>` | WebSocket подключение |
+
+### Переменные окружения
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `DB_NAME` | `groupbuy` | Имя БД PostgreSQL |
+| `DB_USER` | `postgres` | Пользователь БД |
+| `DB_PASSWORD` | `postgres` | Пароль БД |
+| `REDIS_PASSWORD` | `redis_secret` | Пароль Redis |
+| `SECRET_KEY` | `change-me-in-production` | JWT-секрет (обязательно сменить!) |
+| `CORS_ORIGINS` | `http://localhost,http://localhost:8080` | Разрешённые CORS-источники |
+
+### WebSocket протокол
+
+Подключение к `socket-broker`:
+```
+ws://localhost:8001/ws/{room_id}?token=<JWT>
+```
+
+После подключения клиент получает историю последних 50 сообщений комнаты, затем — живые события в формате:
+
+```json
+{
+  "type": "message",
+  "room": "42",
+  "user_id": "123",
+  "text": "Привет!",
+  "timestamp": "2024-01-01T12:00:00+00:00"
+}
+```
+
+Отправка сообщения:
+```json
+{ "text": "Текст сообщения" }
+```
+
+### Остановка и очистка
+
+```bash
+# Остановить контейнеры (данные сохраняются в named volumes)
+docker compose -f docker-compose.4services.yml down
+
+# Остановить и удалить volumes (сброс БД)
+docker compose -f docker-compose.4services.yml down -v
+```
+
 ## License
 
 MIT License
