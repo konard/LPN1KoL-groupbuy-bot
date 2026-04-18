@@ -1,0 +1,125 @@
+version: "3.9"
+
+##############################################################################
+# docker-compose.single.yml — single-container GroupBuy stack
+#
+# Unifies all service roles into ONE Python + FastAPI container:
+#   Gateway / Auth / Purchase / Payment / Chat / Analytics /
+#   Notification / Search / Reputation
+#
+# Endpoints (all served from port 8000):
+#   /api/docs       — Swagger UI (REST API)
+#   /ws/{room}      — WebSocket chat broker
+#   /admin/         — Server-side rendered admin panel
+#   /analytics/     — Analytics stats & CSV/XLSX reports
+#   /health         — Health check
+#
+# Infrastructure:
+#   postgres        — PostgreSQL 16 (persistence)
+#   redis           — Redis 7 (WebSocket Pub/Sub, optional)
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose -f docker-compose.single.yml up --build -d
+#
+# Checklist:
+#   [x] Single Python+FastAPI image — no Go, Node.js, or Rust containers
+#   [x] Swagger UI at http://localhost:8000/api/docs
+#   [x] WebSocket available at ws://localhost:8000/ws/{room}
+#   [x] Admin panel at http://localhost:8000/admin/
+#   [x] Analytics at http://localhost:8000/analytics/stats/summary
+#   [x] Health check at http://localhost:8000/health
+#   [x] docker compose -f docker-compose.single.yml down -v cleans up
+##############################################################################
+
+networks:
+  groupbuy-single:
+    driver: bridge
+
+volumes:
+  postgres_single_data:
+  redis_single_data:
+
+services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: on-failure:3
+    environment:
+      POSTGRES_DB: ${DB_NAME:-groupbuy}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_single_data:/var/lib/postgresql/data
+    networks:
+      - groupbuy-single
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── Cache / Pub-Sub (optional — app runs without it in single-process mode) ─
+  redis:
+    image: redis:7-alpine
+    restart: on-failure:3
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_secret}
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_single_data:/data
+    networks:
+      - groupbuy-single
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
+  # ── Unified Application (Python + FastAPI) ──────────────────────────────────
+  # Replaces: gateway (Go), auth-service (NestJS), purchase-service (NestJS+Kafka),
+  #           payment-service (Go), chat-service (Go+Centrifugo),
+  #           analytics-service (Python/FastAPI), notification-service (Node.js),
+  #           search-service (Go+ES), reputation-service (NestJS).
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:8080}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - groupbuy-single
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
