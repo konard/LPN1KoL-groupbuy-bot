@@ -43,8 +43,12 @@ async function request(method, path, body, opts = {}) {
 
 export const api = {
   // ── Auth ────────────────────────────────────────────────────────────────────
-  login: (username, password) => request('POST', '/auth/login', { username, password }),
-  register: (username, email, password) => request('POST', '/auth/register', { username, email, password }),
+  // Step 1: send phone + password → receives email_hint, sends OTP to email
+  login: (phone, password) => request('POST', '/auth/login', { phone, password }),
+  // Step 2: verify OTP code → receives access_token
+  verifyCode: (phone, code) => request('POST', '/auth/verify-code', { phone, code }),
+  register: (username, phone, email, password) =>
+    request('POST', '/auth/register', { username, phone, email, password }),
   me: () => request('GET', '/auth/me'),
   changePassword: (current_password, new_password) =>
     request('POST', '/auth/change-password', { current_password, new_password }),
