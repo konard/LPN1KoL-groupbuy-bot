@@ -127,3 +127,35 @@ No code or config changes needed. `docker compose up -d` works identically.
 - `docker compose down` stops containers but preserves the `postgres_data` volume
 - `docker compose down -v` removes volumes (database data will be lost)
 - `docker compose up -d` recreates containers with existing data
+
+## Stress-test checklist
+
+Manual verification steps to confirm the architecture behaves as designed:
+
+- [ ] Client dashboard opens at `http://localhost/` with no CORS errors in the
+      browser console (same-origin thanks to the nginx reverse proxy).
+- [ ] Admin panel opens at `http://localhost/admin-panel/` and reads live data
+      from the shared Postgres through the backend API.
+- [ ] Creating an order (or any `publish_event` trigger) in the client
+      dashboard delivers a WebSocket notification to the admin panel via the
+      `room:admin` Redis channel.
+- [ ] `docker compose restart backend` does **not** drop active client or admin
+      WebSocket connections — the `socket-broker` owns the sockets and merely
+      re-subscribes when backend resumes publishing.
+- [ ] `docker compose down` (without `-v`) keeps the `postgres_data` volume; a
+      subsequent `docker compose up -d` recreates all containers with the same
+      data intact. Only `docker compose down -v` destroys the volume.
+
+## Mapping to issue requirements
+
+| Requirement                               | Where it lives                                        |
+|-------------------------------------------|-------------------------------------------------------|
+| Service 1 — frontend-client (React+Nginx) | `services/frontend-client/`                           |
+| Service 2 — backend (Python/FastAPI)      | `services/backend/`                                   |
+| Service 3 — frontend-admin                | `services/frontend-admin/`                            |
+| Service 4 — socket broker                 | `services/socket-service/`                            |
+| Single `docker-compose.yml`               | `docker-compose.yml` (root of `deploy_v2/`)           |
+| Redis Pub/Sub between backend and sockets | `publish_event()` in backend, `psubscribe("room:*")` in socket-broker |
+| Shared internal network                   | Default Docker bridge network created by compose      |
+| `.env.example` for production overrides   | `deploy_v2/.env.example`                              |
+| Reverse proxy / single public port        | `nginx/default.conf` on port 80                       |
