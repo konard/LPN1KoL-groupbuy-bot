@@ -51,6 +51,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80}
       REDIS_URL: redis://redis:6379/0
+      # Backend is exposed at /api/ through the nginx reverse proxy; this tells
+      # FastAPI to generate Swagger UI links (e.g. /api/openapi.json) correctly.
+      ROOT_PATH: /api
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
