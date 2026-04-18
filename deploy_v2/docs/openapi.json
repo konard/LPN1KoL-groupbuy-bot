@@ -12,6 +12,7 @@
     "/auth/register": {
       "post": {
         "summary": "Register",
+        "description": "Register a new user. Requires username, phone number, email, and password.",
         "operationId": "register_auth_register_post",
         "requestBody": {
           "content": {
@@ -50,12 +51,52 @@
     "/auth/login": {
       "post": {
         "summary": "Login",
+        "description": "Step 1 of phone-based login.\n\nValidates phone + password. On success, generates a one-time 6-digit code\nand sends it to the email address the user provided at registration.\nThe client must then call POST /auth/verify-code with the phone and code\nto receive the Bearer token.",
         "operationId": "login_auth_login_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginCodeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-code": {
+      "post": {
+        "summary": "Verify Code",
+        "description": "Step 2 of phone-based login.\n\nValidates the one-time code sent to the user's email after POST /auth/login.\nReturns a Bearer JWT token on success.",
+        "operationId": "verify_code_auth_verify_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCodeVerify"
               }
             }
           },
@@ -3063,11 +3104,47 @@
         ],
         "title": "InvitationOut"
       },
+      "LoginCodeResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "email_hint": {
+            "type": "string",
+            "title": "Email Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "email_hint"
+        ],
+        "title": "LoginCodeResponse"
+      },
+      "LoginCodeVerify": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "code"
+        ],
+        "title": "LoginCodeVerify"
+      },
       "LoginRequest": {
         "properties": {
-          "username": {
+          "phone": {
             "type": "string",
-            "title": "Username"
+            "title": "Phone"
           },
           "password": {
             "type": "string",
@@ -3076,7 +3153,7 @@
         },
         "type": "object",
         "required": [
-          "username",
+          "phone",
           "password"
         ],
         "title": "LoginRequest"
@@ -3857,6 +3934,10 @@
             "type": "string",
             "title": "Username"
           },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
           "email": {
             "type": "string",
             "format": "email",
@@ -3870,6 +3951,7 @@
         "type": "object",
         "required": [
           "username",
+          "phone",
           "email",
           "password"
         ],
@@ -3884,6 +3966,10 @@
           "username": {
             "type": "string",
             "title": "Username"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
           },
           "email": {
             "type": "string",
@@ -3911,6 +3997,7 @@
         "required": [
           "id",
           "username",
+          "phone",
           "email",
           "is_active",
           "is_admin",
@@ -3931,6 +4018,17 @@
               }
             ],
             "title": "Username"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
           },
           "email": {
             "anyOf": [
@@ -3982,13 +4080,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

@@ -30,6 +30,10 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Public path prefix under which the API is exposed via the reverse proxy.
+# Empty by default (direct access); set to "/api" when served behind nginx so
+# Swagger UI at /api/docs correctly references /api/openapi.json.
+ROOT_PATH = os.getenv("ROOT_PATH", "")
 
 # ── Email/SMTP Config ────────────────────────────────────────────────────────
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -598,6 +602,7 @@ app = FastAPI(
     ),
     contact={"name": "GroupBuy Team"},
     lifespan=lifespan,
+    root_path=ROOT_PATH,
 )
 
 app.add_middleware(
