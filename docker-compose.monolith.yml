@@ -4,21 +4,24 @@ version: "3.9"
 # docker-compose.monolith.yml — consolidated monolith architecture
 #
 # Architecture:
-#   backend-monolith  — Python 3.12 + FastAPI
-#                       modules: auth, purchase, payment, reputation
+#   backend-monolith  — Python 3.12 + FastAPI (port 4000)
+#                       Consolidated modules: auth, purchase, payment, reputation,
+#                       chat (Socket.IO), search (Elasticsearch), notification (httpx)
 #                       includes core/ (Django utilities) and core-rust/ (compiled
 #                       via PyO3 multi-stage build: Rust → .so → Python slim image)
-#                       single PostgreSQL 15 (schemas: auth, purchase, payment, reputation)
-#                       Alembic migrations, Kafka producer only (no in-process consumers)
+#                       single PostgreSQL 15 (schemas: auth, purchase, payment, reputation, chat)
+#                       Alembic migrations, Kafka producer for analytics-raw topic
 #
 #   admin-backend     — NestJS, read-only/CRUD access to monolith DB
 #   admin-frontend    — React static build served by Nginx; proxies /api/admin/* to admin-backend
 #   user-frontend     — Next.js (SSR); proxies /api/* directly to backend-monolith (bypasses gateway)
-#   chat              — Go + Centrifugo; Redis for Centrifugo persistence
-#   gateway           — Go (gorilla/mux) API gateway
-#   analytics         — Python FastAPI
-#   notification      — Node.js
-#   search            — Go + Elasticsearch
+#   gateway           — Go (gorilla/mux) API gateway; all service URLs point to backend-monolith
+#   analytics         — Python FastAPI; separate service, receives events from monolith via Kafka
+#
+#   Removed (consolidated into backend-monolith):
+#   - chat-service (Go + Centrifugo) → Socket.IO (python-socketio)
+#   - notification-service (Node.js)  → httpx-based async dispatch
+#   - search-service (Go)             → elasticsearch-py[async]
 #
 # Networks:
 #   backend-network   — internal service communication
@@ -307,11 +310,31 @@ services:
       BCRYPT_ROUNDS: 10
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: backend-monolith
-      NOTIFICATION_SERVICE_URL: http://notification-service:4005
+      ANALYTICS_TOPIC: analytics-raw
+      # Consolidated: search, notification, chat now run inside this service
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_INDEX: purchases
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      FIREBASE_SERVER_KEY: ${FIREBASE_SERVER_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     depends_on:
       postgres-monolith:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     networks:
       - backend-network
@@ -327,7 +350,7 @@ services:
       replicas: 1
       resources:
         limits:
-          memory: 256M
+          memory: 512M
 
   # ─────────────────────────────────────────────
   # Admin Panel (NestJS backend + React/Nginx frontend)
@@ -442,10 +465,11 @@ services:
       PURCHASE_SERVICE_URL: http://backend-monolith:4000
       PAYMENT_SERVICE_URL: http://backend-monolith:4000
       REPUTATION_SERVICE_URL: http://backend-monolith:4000
-      CHAT_SERVICE_URL: http://chat-service:4004
-      SEARCH_SERVICE_URL: http://search-service:4007
+      # Chat, Search, Notification consolidated into backend-monolith
+      CHAT_SERVICE_URL: http://backend-monolith:4000
+      SEARCH_SERVICE_URL: http://backend-monolith:4000
+      NOTIFICATION_SERVICE_URL: http://backend-monolith:4000
       ANALYTICS_SERVICE_URL: http://analytics-service:4006
-      NOTIFICATION_SERVICE_URL: http://notification-service:4005
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-60}
@@ -456,10 +480,6 @@ services:
         condition: service_healthy
       backend-monolith:
         condition: service_healthy
-      chat-service:
-        condition: service_started
-      search-service:
-        condition: service_started
     networks:
       - backend-network
     restart: unless-stopped
@@ -468,79 +488,13 @@ services:
         limits:
           memory: 32M
 
-  # Chat service — Go + Centrifugo; Redis is the Centrifugo persistence engine
-  chat-service:
-    build:
-      context: ./services/chat-service
-      dockerfile: Dockerfile
-    ports:
-      - "4004:4004"
-    env_file:
-      - .env
-    environment:
-      PORT: 4004
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-chat:5432/${CHAT_DB_NAME:-chat_db}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-      CENTRIFUGO_URL: http://centrifugo:8000
-      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
-      CLICKHOUSE_DSN: clickhouse://clickhouse_user:clickhouse_password@clickhouse:9000/chat_history
-      MEDIA_STORAGE_DIR: /app/media
-      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-/api/v1/chat/media}
-    volumes:
-      - chat_media_data:/app/media
-    depends_on:
-      postgres-chat:
-        condition: service_healthy
-      centrifugo:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - backend-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
-  notification-service:
-    build:
-      context: ./services/notification-service
-      dockerfile: Dockerfile
-    ports:
-      - "4005:4005"
-    env_file:
-      - .env
-    environment:
-      PORT: 4005
-      # Consumes from monolith.* topics
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_GROUP_ID: notification-group
-      CENTRIFUGO_URL: http://centrifugo:8000
-      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
-      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-notifications@example.com}
-      SMTP_PASS: ${SMTP_PASS:-smtp_password}
-      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
-      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-fcm_server_key_placeholder}
-      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
-      WHATSAPP_API_URL: "${WHATSAPP_API_URL:-}"
-      WHATSAPP_ACCESS_TOKEN: "${WHATSAPP_ACCESS_TOKEN:-}"
-      WHATSAPP_PHONE_NUMBER_ID: "${WHATSAPP_PHONE_NUMBER_ID:-}"
-      WHATSAPP_VERIFY_TOKEN: "${WHATSAPP_VERIFY_TOKEN:-}"
-    depends_on:
-      kafka:
-        condition: service_healthy
-      centrifugo:
-        condition: service_healthy
-    networks:
-      - backend-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 48M
+  # NOTE: chat-service, notification-service, and search-service have been
+  # consolidated into backend-monolith. These definitions are kept as comments
+  # for reference but are NOT started in monolith deployment mode.
+  #
+  # chat-service: Go + Centrifugo replaced by Socket.IO in backend-monolith
+  # notification-service: Node.js replaced by httpx-based service in backend-monolith
+  # search-service: Go + Elasticsearch replaced by elasticsearch-py in backend-monolith
 
   analytics-service:
     build:
@@ -573,32 +527,7 @@ services:
         limits:
           memory: 256M
 
-  search-service:
-    build:
-      context: ./services/search-service
-      dockerfile: Dockerfile
-    ports:
-      - "4007:4007"
-    environment:
-      PORT: 4007
-      ELASTICSEARCH_URL: http://elasticsearch:9200
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-      # Consumes monolith.purchase.created to index purchases
-      KAFKA_BROKERS: kafka:9092
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - backend-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 32M
+  # search-service: consolidated into backend-monolith (see note above)
 
   # ─────────────────────────────────────────────
   # Monitoring

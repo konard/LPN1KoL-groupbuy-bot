@@ -89,4 +89,6 @@ ENV PORT=4000
 EXPOSE 4000
 
 # Run Alembic migrations then start FastAPI
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-4000}"]
+# NOTE: Socket.IO is mounted as an ASGI app via socket_app; uvicorn must point
+# to that wrapper so WebSocket upgrades are handled at the ASGI layer.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:socket_app --host 0.0.0.0 --port ${PORT:-4000}"]
