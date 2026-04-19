@@ -372,6 +372,8 @@ services:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-monolith:5432/${MONOLITH_DB_NAME:-monolith_db}
       # Shared JWT secret for token validation
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       NODE_ENV: production
     depends_on:
       postgres-monolith:
@@ -397,7 +399,7 @@ services:
   # Nginx proxies /api/admin/* to admin-backend
   admin-frontend:
     build:
-      context: ./frontend
+      context: ./admin-frontend
       dockerfile: Dockerfile
     ports:
       - "8080:80"
