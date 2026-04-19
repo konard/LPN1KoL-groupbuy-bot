@@ -21,11 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libpq-dev \
     python3-dev \
+    python3-pip \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install maturin to build PyO3 extensions
-RUN pip3 install maturin --break-system-packages 2>/dev/null || \
-    (curl https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && python3 /tmp/get-pip.py && pip3 install maturin)
+RUN pip3 install maturin --break-system-packages
 
 WORKDIR /build
 
