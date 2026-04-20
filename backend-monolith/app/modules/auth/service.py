@@ -52,7 +52,18 @@ async def register_user(db: AsyncSession, req: RegisterRequest) -> User:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=409, detail="Email already registered")
-    user = User(email=req.email, password_hash=_hash_password(req.password))
+    user = User(
+        email=req.email,
+        password_hash=_hash_password(req.password),
+        platform=req.platform,
+        platform_user_id=req.platform_user_id,
+        username=req.username,
+        first_name=req.first_name,
+        last_name=req.last_name,
+        phone=req.phone,
+        role=req.role,
+        language_code=req.language_code,
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -70,7 +81,7 @@ async def login_user(db: AsyncSession, req: LoginRequest) -> TokenResponse:
             raise HTTPException(status_code=401, detail="TOTP code required")
         if not pyotp.TOTP(user.totp_secret).verify(req.totp_code):
             raise HTTPException(status_code=401, detail="Invalid TOTP code")
-    return create_token_pair(user.id, user.email)
+    return create_token_pair(user.id, user.email, user.role)
 
 
 async def setup_totp(db: AsyncSession, user_id: uuid.UUID) -> tuple[str, str]:

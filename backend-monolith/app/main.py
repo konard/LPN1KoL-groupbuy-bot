@@ -7,11 +7,11 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.kafka_producer import stop_producer
-from app.modules.auth.router import router as auth_router
+from app.modules.auth.router import router as auth_router, users_router
 from app.modules.chat.router import router as chat_router
 from app.modules.notification.router import router as notify_router
 from app.modules.payment.router import escrow_router, router as wallet_router
-from app.modules.purchase.router import router as purchase_router
+from app.modules.purchase.router import categories_router, router as purchase_router
 from app.modules.reputation.router import router as reputation_router
 from app.modules.search.router import router as search_router
 from app.modules.search.service import close_es
@@ -25,7 +25,27 @@ async def lifespan(app: FastAPI):
     await close_es()
 
 
-app = FastAPI(title="GroupBuy Backend Monolith", version="2.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="GroupBuy Backend Monolith",
+    version="2.1.0",
+    description=(
+        "Consolidated FastAPI backend for the GroupBuy platform.\n\n"
+        "**Modules:**\n"
+        "- **auth** — registration, login, JWT refresh, 2FA (TOTP)\n"
+        "- **users** — user management: list, search, balance, role, WebSocket token\n"
+        "- **categories** — procurement category hierarchy\n"
+        "- **purchases** — full group-purchase lifecycle: create, join, vote, approve supplier, close\n"
+        "- **wallets / escrow** — internal balance and escrow management\n"
+        "- **reputation** — reviews and aggregate ratings\n"
+        "- **chat** — chat rooms and messages\n"
+        "- **search** — Elasticsearch-backed full-text search\n"
+        "- **notification** — multi-channel notification dispatch\n"
+    ),
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 
 cors_origins = (
     [o.strip() for o in settings.cors_origins.split(",")]
@@ -42,6 +62,8 @@ app.add_middleware(
 
 # Existing modules
 app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(categories_router)
 app.include_router(purchase_router)
 app.include_router(wallet_router)
 app.include_router(escrow_router)
