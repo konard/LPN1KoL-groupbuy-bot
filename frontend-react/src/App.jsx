@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import { loadWasm } from './services/wasm';
 import Layout from './components/Layout';
@@ -20,6 +20,11 @@ import BannedPage from './components/BannedPage';
 
 // Pre-load WASM module for high-performance processing
 loadWasm();
+
+function AdminRedirect() {
+  const { pathname } = useLocation();
+  return <Navigate to={pathname.replace(/^\/admin/, '/admin-panel')} replace />;
+}
 
 function MainApp() {
   const { user, loadUser, theme, setTheme } = useStore();
@@ -74,6 +79,9 @@ function MainApp() {
           <Route path="/" element={<Cabinet />} />
           <Route path="/chat/:procurementId" element={<ChatView />} />
           <Route path="/cabinet" element={<Cabinet />} />
+          {/* /lk (личный кабинет) is the advertised URL for the personal account */}
+          <Route path="/lk" element={<Cabinet />} />
+          <Route path="/lk/*" element={<Cabinet />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/in-development" element={<UnderDevelopmentPage />} />
           <Route path="/banned" element={<BannedPage />} />
@@ -94,6 +102,9 @@ function App() {
       <Routes>
         {/* Admin Panel Routes */}
         <Route path="/admin-panel/*" element={<AdminApp />} />
+        {/* /admin/* is an alias — redirect to the canonical /admin-panel/* path */}
+        <Route path="/admin" element={<Navigate to="/admin-panel" replace />} />
+        <Route path="/admin/*" element={<AdminRedirect />} />
 
         {/* Main App Routes */}
         <Route path="/*" element={<MainApp />} />
