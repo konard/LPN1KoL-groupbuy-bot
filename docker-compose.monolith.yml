@@ -14,18 +14,34 @@ version: "3.9"
 #
 #   admin-backend     — NestJS, read-only/CRUD access to monolith DB
 #   admin-frontend    — React static build served by Nginx; proxies /api/admin/* to admin-backend
-#   user-frontend     — Next.js (SSR); proxies /api/* directly to backend-monolith (bypasses gateway)
+#   user-frontend     — React/Vite SPA; Nginx proxies /api/* to backend-monolith
+#   nginx             — Reverse proxy / public entry point (ports 80, 443)
+#                       Routes: /api/admin/* → admin-backend, /api/* → backend-monolith,
+#                               /ws/* → backend-monolith (Socket.IO), / → user-frontend
+#                       Config: infrastructure/nginx/nginx-monolith.conf
+#   certbot           — Let's Encrypt certificate renewal
 #   gateway           — Go (gorilla/mux) API gateway; all service URLs point to backend-monolith
 #   analytics         — Python FastAPI; separate service, receives events from monolith via Kafka
+#   bot               — Telegram/groupbuy bot (calls backend-monolith API)
+#   telegram-adapter  — Telegram webhook adapter
+#   mattermost-adapter — Mattermost webhook adapter
 #
 #   Removed (consolidated into backend-monolith):
-#   - chat-service (Go + Centrifugo) → Socket.IO (python-socketio)
-#   - notification-service (Node.js)  → httpx-based async dispatch
-#   - search-service (Go)             → elasticsearch-py[async]
+#   - django-admin (Django admin panel)  → admin-backend (NestJS) + admin-frontend
+#   - core (Rust binary)                 → backend-monolith FastAPI
+#   - chat-service (Go + Centrifugo)     → Socket.IO (python-socketio)
+#   - notification-service (Node.js)     → httpx-based async dispatch
+#   - search-service (Go)                → elasticsearch-py[async]
+#   - websocket-server (legacy)          → Socket.IO in backend-monolith
 #
 # Networks:
 #   backend-network   — internal service communication
 #   frontend-network  — frontend ↔ backend-monolith / admin-backend
+#
+# Usage:
+#   cp .env.monolith.example .env
+#   bash scripts/init-letsencrypt.sh   # optional, for HTTPS
+#   docker compose -f docker-compose.monolith.yml up -d
 #
 # Sensitive vars are read from .env (see .env.monolith.example).
 ##############################################################################
@@ -46,6 +62,8 @@ volumes:
   clickhouse_data:
   minio_data:
   chat_media_data:
+  letsencrypt_data:
+  certbot_webroot:
 
 services:
   # ─────────────────────────────────────────────
@@ -422,8 +440,8 @@ services:
     build:
       context: ./frontend-react
       dockerfile: Dockerfile
-    ports:
-      - "3000:80"
+    # Port 3000 is not exposed here because nginx (port 80/443) routes to this
+    # service internally.  Expose it directly only for development/debugging.
     environment:
       NODE_ENV: production
     depends_on:
@@ -442,6 +460,56 @@ services:
       resources:
         limits:
           memory: 64M
+
+  # ─────────────────────────────────────────────
+  # Nginx reverse proxy (public entry point)
+  # ─────────────────────────────────────────────
+
+  nginx:
+    image: nginx:alpine
+    container_name: groupbuy-nginx-monolith
+    restart: unless-stopped
+    entrypoint: ["/docker-entrypoint-custom.sh"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx-monolith.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl
+      - certbot_webroot:/var/www/certbot:ro
+      - letsencrypt_data:/etc/letsencrypt:ro
+    depends_on:
+      backend-monolith:
+        condition: service_healthy
+      admin-backend:
+        condition: service_started
+      user-frontend:
+        condition: service_healthy
+      admin-frontend:
+        condition: service_started
+    networks:
+      - frontend-network
+      - backend-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: groupbuy-certbot-monolith
+    restart: unless-stopped
+    volumes:
+      - letsencrypt_data:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    networks:
+      - frontend-network
+    deploy:
+      resources:
+        limits:
+          memory: 32M
 
   # ─────────────────────────────────────────────
   # Infrastructure Services (unchanged from microservices layout)
@@ -526,6 +594,96 @@ services:
           memory: 256M
 
   # search-service: consolidated into backend-monolith (see note above)
+
+  # ─────────────────────────────────────────────
+  # Bot and messaging adapters
+  # ─────────────────────────────────────────────
+
+  bot:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/bot:${IMAGE_TAG:-main}
+    build:
+      context: ./bot
+    container_name: groupbuy-bot-monolith
+    restart: unless-stopped
+    environment:
+      # backend-monolith exposes the same /api/* surface as the old core service
+      - CORE_API_URL=http://backend-monolith:4000/api
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/1
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      backend-monolith:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  telegram-proxy:
+    # Only starts when the "proxy" profile is active:
+    #   docker compose -f docker-compose.monolith.yml --profile proxy up -d
+    # AND set TELEGRAM_USE_PROXY=true in .env.
+    image: serjs/go-socks5-proxy:latest
+    container_name: groupbuy-telegram-proxy-monolith
+    restart: unless-stopped
+    networks:
+      - backend-network
+    profiles:
+      - proxy
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  telegram-adapter:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
+    build:
+      context: ./adapters/telegram
+    container_name: groupbuy-telegram-adapter-monolith
+    restart: unless-stopped
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
+      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - backend-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  mattermost-adapter:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
+    build:
+      context: ./adapters/mattermost
+    container_name: groupbuy-mattermost-adapter-monolith
+    restart: unless-stopped
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - MATTERMOST_URL=${MATTERMOST_URL}
+      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
+      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
+      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
+      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
+    ports:
+      - "8002:8002"
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - backend-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
   # ─────────────────────────────────────────────
   # Monitoring
