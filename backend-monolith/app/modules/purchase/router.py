@@ -86,6 +86,18 @@ async def list_purchases(
     )
 
 
+@router.get("/user/{user_id}", response_model=list[schemas.PurchaseOut])
+async def list_user_purchases(
+    user_id: uuid.UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """List purchases where the given user is the organizer."""
+    return await service.list_purchases(db, skip=skip, limit=limit, organizer_id=user_id)
+
+
 @router.get("/{purchase_id}", response_model=schemas.PurchaseOut)
 async def get_purchase(
     purchase_id: uuid.UUID,
