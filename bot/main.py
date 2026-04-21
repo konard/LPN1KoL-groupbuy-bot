@@ -189,10 +189,21 @@ async def main():
     """Main function to start the bot"""
     global _bot, _dp
 
-    # Check for token
+    # Always start the adapter message server first so Mattermost/VK adapters
+    # can reach the bot even when Telegram is not configured.
+    adapter_runner = await start_adapter_server()
+
     if not config.telegram_token:
-        logger.error("TELEGRAM_TOKEN is not set!")
-        sys.exit(1)
+        logger.warning(
+            "TELEGRAM_TOKEN is not set — Telegram polling/webhook disabled. "
+            "Adapter message server (port 8001) is still running."
+        )
+        # Keep running to serve platform adapters (Mattermost, VK, etc.)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await adapter_runner.cleanup()
+        return
 
     # Initialize bot and dispatcher
     _bot = Bot(
@@ -210,10 +221,6 @@ async def main():
     _dp.include_router(registration.router)
 
     logger.info("Starting GroupBuy Bot in %s mode...", config.bot_mode)
-
-    # Always start the adapter message server so VK/Mattermost adapters can
-    # forward messages even when the bot is running in polling mode.
-    adapter_runner = await start_adapter_server()
 
     try:
         if config.bot_mode == "webhook" and config.webhook_host:
