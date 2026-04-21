@@ -52,10 +52,15 @@ cors_origins = (
     if settings.cors_origins != "*"
     else ["*"]
 )
+# CORS spec forbids `Access-Control-Allow-Origin: *` together with
+# `Access-Control-Allow-Credentials: true` — browsers reject such responses.
+# When origins are wildcarded (typical dev setup), drop the credentials flag
+# so the header negotiation succeeds.
+allow_credentials = cors_origins != ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
