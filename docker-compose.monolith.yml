@@ -609,7 +609,7 @@ services:
       # backend-monolith exposes the same /api/* surface as the old core service
       - CORE_API_URL=http://backend-monolith:4000/api
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/1
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       backend-monolith:
@@ -618,6 +618,12 @@ services:
         condition: service_healthy
     networks:
       - backend-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -647,12 +653,12 @@ services:
     restart: unless-stopped
     environment:
       - BOT_SERVICE_URL=http://bot:8001
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
       - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
       - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
     depends_on:
       bot:
-        condition: service_started
+        condition: service_healthy
     networks:
       - backend-network
     deploy:
@@ -668,16 +674,16 @@ services:
     restart: unless-stopped
     environment:
       - BOT_SERVICE_URL=http://bot:8001
-      - MATTERMOST_URL=${MATTERMOST_URL}
-      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
-      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
+      - MATTERMOST_URL=${MATTERMOST_URL:-}
+      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN:-}
+      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL:-}
       - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
       - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
     ports:
       - "8002:8002"
     depends_on:
       bot:
-        condition: service_started
+        condition: service_healthy
     networks:
       - backend-network
     deploy:
