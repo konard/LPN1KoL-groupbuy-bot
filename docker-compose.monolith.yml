@@ -54,14 +54,12 @@ networks:
 
 volumes:
   postgres_monolith_data:
-  postgres_chat_data:
   elasticsearch_data:
   redis_data:
   kafka_data:
   zookeeper_data:
   clickhouse_data:
   minio_data:
-  chat_media_data:
   letsencrypt_data:
   certbot_webroot:
 
@@ -146,7 +144,8 @@ services:
         limits:
           memory: 128M
 
-  # Single PostgreSQL 15 instance for the monolith (schemas: auth, purchase, payment, reputation)
+  # Single PostgreSQL 15 instance for the monolith
+  # Schemas: auth, purchase, payment, reputation, chat (created by Alembic migrations)
   postgres-monolith:
     image: postgres:15-alpine
     environment:
@@ -170,30 +169,10 @@ services:
         limits:
           memory: 256M
 
-  postgres-chat:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: ${CHAT_DB_NAME:-chat_db}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-    volumes:
-      - postgres_chat_data:/var/lib/postgresql/data
-    ports:
-      - "5436:5432"
-    networks:
-      - backend-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 128M
+  # NOTE: postgres-chat removed — chat schema is part of monolith_db (see migration 0002).
+  # backend-monolith connects to postgres-monolith for all data including chat.
 
-  # Redis — Centrifugo persistence engine + general cache
+  # Redis — general cache + Socket.IO pub/sub for horizontal scaling
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret} --maxmemory 200mb --maxmemory-policy allkeys-lru
@@ -276,33 +255,9 @@ services:
         limits:
           memory: 640M
 
-  # Centrifugo uses Redis as persistence engine for WebSocket chat history
-  centrifugo:
-    image: centrifugo/centrifugo:v5
-    volumes:
-      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json
-    command: centrifugo -c /centrifugo/config.json
-    environment:
-      CENTRIFUGO_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
-    ports:
-      - "8000:8000"
-      - "9001:9001"
-    networks:
-      - backend-network
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 192M
+  # NOTE: centrifugo has been removed — real-time chat is handled by Socket.IO
+  # inside backend-monolith (python-socketio). Centrifugo is not part of the
+  # monolith architecture.
 
   # ─────────────────────────────────────────────
   # Backend Monolith (auth + purchase + payment + reputation)
