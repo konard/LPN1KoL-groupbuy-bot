@@ -12,7 +12,7 @@ const styles = `
 `
 
 export default function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,8 +22,8 @@ export default function LoginPage({ onLogin }) {
     setLoading(true)
     setError('')
     try {
-      const data = await api.login({ email, password })
-      onLogin(data.access_token)
+      const data = await api.login({ username, password })
+      onLogin(data.token)
     } catch (err) {
       setError('Invalid credentials')
     } finally {
@@ -40,10 +40,10 @@ export default function LoginPage({ onLogin }) {
           {error && <div className="error">{error}</div>}
           <form onSubmit={handleSubmit}>
             <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
             <input
