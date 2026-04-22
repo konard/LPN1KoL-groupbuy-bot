@@ -14,7 +14,7 @@ version: "3.9"
 #
 #   admin-backend     — NestJS, read-only/CRUD access to monolith DB
 #   admin-frontend    — React static build served by Nginx; proxies /api/admin/* to admin-backend
-#   user-frontend     — React/Vite SPA; Nginx proxies /api/* to backend-monolith
+#   user-frontend     — Next.js SSR app (port 3000); nginx proxies / and /lk/ to it
 #   nginx             — Reverse proxy / public entry point (ports 80, 443)
 #                       Routes: /api/admin/* → admin-backend, /api/* → backend-monolith,
 #                               /ws/* → backend-monolith (Socket.IO), / → user-frontend
@@ -438,12 +438,13 @@ services:
 
   user-frontend:
     build:
-      context: ./frontend-react
+      context: ./user-frontend
       dockerfile: Dockerfile
-    # Port 3000 is not exposed here because nginx (port 80/443) routes to this
-    # service internally.  Expose it directly only for development/debugging.
+    # Next.js standalone server listens on PORT (default 3000).
+    # nginx-monolith.conf proxies / and /lk/ to user-frontend:3000.
     environment:
       NODE_ENV: production
+      PORT: 3000
     depends_on:
       backend-monolith:
         condition: service_healthy
@@ -451,7 +452,7 @@ services:
       - frontend-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -459,7 +460,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 64M
+          memory: 128M
 
   # ─────────────────────────────────────────────
   # Nginx reverse proxy (public entry point)
@@ -618,12 +619,6 @@ services:
         condition: service_healthy
     networks:
       - backend-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8001/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     deploy:
       resources:
         limits:
@@ -658,7 +653,7 @@ services:
       - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
     depends_on:
       bot:
-        condition: service_healthy
+        condition: service_started
     networks:
       - backend-network
     deploy:
@@ -683,7 +678,7 @@ services:
       - "8002:8002"
     depends_on:
       bot:
-        condition: service_healthy
+        condition: service_started
     networks:
       - backend-network
     deploy:
