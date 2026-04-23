@@ -207,6 +207,7 @@ async def join_purchase(
         user_id=user_id,
         quantity=req.quantity,
         amount=req.amount,
+        city=req.city,
         notes=req.notes,
         status="pending",
     )

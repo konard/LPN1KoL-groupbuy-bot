@@ -9,12 +9,16 @@ from app.config import settings
 from app.kafka_producer import stop_producer
 from app.modules.auth.router import router as auth_router, users_router
 from app.modules.chat.router import router as chat_router
+from app.modules.invitations.router import router as invitations_router
+from app.modules.news.router import router as news_router
 from app.modules.notification.router import router as notify_router
 from app.modules.payment.router import escrow_router, router as wallet_router
 from app.modules.purchase.router import categories_router, router as purchase_router
 from app.modules.reputation.router import router as reputation_router
+from app.modules.requests.router import router as requests_router
 from app.modules.search.router import router as search_router
 from app.modules.search.service import close_es
+from app.modules.supplier.router import router as supplier_router
 from app.socket.socketio_server import sio
 
 
@@ -26,20 +30,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="GroupBuy Backend Monolith",
-    version="2.1.0",
+    title="Сервис организации закупок — Backend API",
+    version="2.2.0",
     description=(
-        "Consolidated FastAPI backend for the GroupBuy platform.\n\n"
-        "**Modules:**\n"
-        "- **auth** — registration, login, JWT refresh, 2FA (TOTP)\n"
-        "- **users** — user management: list, search, balance, role, WebSocket token\n"
-        "- **categories** — procurement category hierarchy\n"
-        "- **purchases** — full group-purchase lifecycle: create, join, vote, approve supplier, close\n"
-        "- **wallets / escrow** — internal balance and escrow management\n"
-        "- **reputation** — reviews and aggregate ratings\n"
-        "- **chat** — chat rooms and messages\n"
-        "- **search** — Elasticsearch-backed full-text search\n"
-        "- **notification** — multi-channel notification dispatch\n"
+        "Backend API платформы для организации групповых закупок.\n\n"
+        "Платформа объединяет **покупателей**, **организаторов** и **поставщиков**, "
+        "обеспечивая прозрачность, удобство и автоматизацию процессов.\n\n"
+        "**Модули:**\n"
+        "- **Авторизация** — регистрация, вход, обновление JWT-токенов, двухфакторная аутентификация (TOTP)\n"
+        "- **Пользователи** — управление профилями: поиск, баланс, роль, WebSocket-токен\n"
+        "- **Категории** — иерархия категорий товаров\n"
+        "- **Закупки** — полный жизненный цикл групповой закупки: создание, присоединение, голосование, утверждение поставщика, стоп-сумма, закрытие\n"
+        "- **Запросы покупателей** — создание и управление запросами на товары\n"
+        "- **Кошелёк / Эскроу** — управление балансом: пополнение, вывод средств, эскроу\n"
+        "- **Репутация** — отзывы и агрегированные рейтинги\n"
+        "- **Чат** — комнаты чата и сообщения (вертикальная лента и закрытые чаты закупок)\n"
+        "- **Поиск** — полнотекстовый поиск по закупкам (Elasticsearch)\n"
+        "- **Уведомления** — многоканальная отправка уведомлений (email, push, Telegram)\n"
+        "- **Новости** — лента новостей от организаторов и поставщиков\n"
+        "- **Поставщик** — карта компании, прайс-листы, закрывающие документы\n"
+        "- **Приглашения** — приглашение поставщиков и покупателей в закупки\n"
     ),
     lifespan=lifespan,
     docs_url="/docs",
@@ -78,6 +88,12 @@ app.include_router(reputation_router)
 app.include_router(chat_router)
 app.include_router(search_router)
 app.include_router(notify_router)
+
+# New modules per ТЗ requirements
+app.include_router(news_router)
+app.include_router(requests_router)
+app.include_router(supplier_router)
+app.include_router(invitations_router)
 
 
 @app.get("/health")

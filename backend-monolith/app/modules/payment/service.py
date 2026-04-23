@@ -29,6 +29,23 @@ async def deposit(db: AsyncSession, user_id: uuid.UUID, amount: Decimal) -> Wall
     return wallet
 
 
+async def withdraw(db: AsyncSession, user_id: uuid.UUID, amount: Decimal, account_details: str) -> Wallet:
+    from fastapi import HTTPException
+
+    wallet = await get_or_create_wallet(db, user_id)
+    available = wallet.balance - wallet.hold_amount
+    if available < amount:
+        raise HTTPException(status_code=400, detail="Недостаточно средств для вывода")
+    wallet.balance -= amount
+    await db.commit()
+    await db.refresh(wallet)
+    await publish(
+        "monolith.payment.withdrawn",
+        {"user_id": str(user_id), "amount": str(amount), "account_details": account_details},
+    )
+    return wallet
+
+
 async def hold(db: AsyncSession, user_id: uuid.UUID, amount: Decimal) -> Wallet:
     from fastapi import HTTPException
 
