@@ -115,7 +115,7 @@ jobs:
           context: ./core-rust
           push: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Build bot image
         uses: docker/build-push-action@v5
@@ -123,7 +123,7 @@ jobs:
           context: ./bot
           push: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Build websocket-server image
         uses: docker/build-push-action@v5
@@ -131,7 +131,7 @@ jobs:
           context: ./infrastructure/websocket
           push: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Build mattermost-adapter image
         uses: docker/build-push-action@v5
@@ -139,7 +139,7 @@ jobs:
           context: ./adapters/mattermost
           push: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
   # Validate docker-compose configuration
   docker-compose-validate:
@@ -167,6 +167,9 @@ jobs:
 
       - name: Validate docker-compose.modular.yml
         run: docker compose -f docker-compose.modular.yml config --quiet
+
+      - name: Validate docker-compose.monolith.yml
+        run: docker compose -f docker-compose.monolith.yml config --quiet
 
   # Build microservices Docker images
   microservices-build:
