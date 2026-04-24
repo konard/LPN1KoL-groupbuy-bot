@@ -123,6 +123,7 @@ class Participant(Base):
     status: Mapped[str] = mapped_column(String(50), default="pending")
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("1"))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

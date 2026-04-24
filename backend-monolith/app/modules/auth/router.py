@@ -12,23 +12,58 @@ from app.modules.auth import schemas, service
 from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 
-router = APIRouter(prefix="/auth", tags=["auth"])
-users_router = APIRouter(prefix="/api/users", tags=["users"])
+router = APIRouter(prefix="/auth", tags=["Авторизация"])
+users_router = APIRouter(prefix="/api/users", tags=["Пользователи"])
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
 
 
-@router.post("/register", response_model=schemas.UserOut, status_code=201)
+@router.post(
+    "/register",
+    response_model=schemas.UserOut,
+    status_code=201,
+    summary="Регистрация пользователя",
+    description=(
+        "Регистрирует нового пользователя в системе. "
+        "Поля: электронная почта, пароль, роль (buyer | organizer | supplier). "
+        "Система проверяет уникальность email и создаёт учётную запись."
+    ),
+    responses={
+        400: {"description": "Пользователь с таким email уже существует"},
+        422: {"description": "Ошибка валидации данных"},
+    },
+)
 async def register(req: schemas.RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """Зарегистрировать нового пользователя."""
     return await service.register_user(db, req)
 
 
-@router.post("/login", response_model=schemas.TokenResponse)
+@router.post(
+    "/login",
+    response_model=schemas.TokenResponse,
+    summary="Авторизация пользователя",
+    description=(
+        "Авторизует пользователя по email и паролю. "
+        "Система проверяет данные и генерирует JWT-токен. "
+        "При включённой двухфакторной аутентификации требуется TOTP-код."
+    ),
+    responses={
+        401: {"description": "Неверные email или пароль"},
+        422: {"description": "Ошибка валидации данных"},
+    },
+)
 async def login(req: schemas.LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Авторизовать пользователя и получить JWT-токены."""
     return await service.login_user(db, req)
 
 
-@router.post("/refresh", response_model=schemas.TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=schemas.TokenResponse,
+    summary="Обновить токен",
+    description="Обновляет пару JWT-токенов (access + refresh) по действующему refresh-токену.",
+    responses={401: {"description": "Недействительный refresh-токен"}},
+)
 async def refresh(req: schemas.RefreshRequest, db: AsyncSession = Depends(get_db)):
     try:
         payload = service.decode_token(req.refresh_token)
@@ -43,42 +78,66 @@ async def refresh(req: schemas.RefreshRequest, db: AsyncSession = Depends(get_db
     return service.create_token_pair(user.id, user.email, user.role)
 
 
-@router.post("/2fa/setup", response_model=schemas.TOTPSetupResponse)
+@router.post(
+    "/2fa/setup",
+    response_model=schemas.TOTPSetupResponse,
+    summary="Настроить двухфакторную аутентификацию",
+    description="Генерирует TOTP-секрет и QR-код для подключения приложения аутентификатора (Google Authenticator, Authy и т.д.).",
+)
 async def setup_2fa(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
+    """Настроить 2FA для текущего пользователя."""
     secret, uri = await service.setup_totp(db, current_user.id)
     return schemas.TOTPSetupResponse(secret=secret, qr_uri=uri)
 
 
-@router.post("/2fa/verify")
+@router.post(
+    "/2fa/verify",
+    summary="Подтвердить двухфакторную аутентификацию",
+    description="Верифицирует TOTP-код и активирует двухфакторную аутентификацию для текущего пользователя.",
+    responses={400: {"description": "Неверный TOTP-код"}},
+)
 async def verify_2fa(
     req: schemas.TOTPVerifyRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Подтвердить и активировать 2FA."""
     await service.verify_and_enable_totp(db, current_user.id, req.code)
-    return {"detail": "2FA enabled"}
+    return {"detail": "2FA включена"}
 
 
-@router.get("/me", response_model=schemas.UserOut)
+@router.get(
+    "/me",
+    response_model=schemas.UserOut,
+    summary="Текущий пользователь",
+    description="Возвращает данные текущего авторизованного пользователя.",
+)
 async def me(current_user: User = Depends(get_current_user)):
+    """Получить данные текущего пользователя."""
     return current_user
 
 
 # ── User management endpoints ─────────────────────────────────────────────────
 
 
-@users_router.get("", response_model=list[schemas.UserOut])
+@users_router.get(
+    "",
+    response_model=list[schemas.UserOut],
+    summary="Список пользователей",
+    description="Возвращает список пользователей с возможностью фильтрации по роли и платформе.",
+    responses={422: {"description": "Ошибка валидации параметров"}},
+)
 async def list_users(
-    role: str | None = Query(None),
-    platform: str | None = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    role: str | None = Query(None, description="Фильтр по роли: buyer | organizer | supplier"),
+    platform: str | None = Query(None, description="Фильтр по платформе"),
+    skip: int = Query(0, ge=0, description="Смещение для пагинации"),
+    limit: int = Query(20, ge=1, le=100, description="Количество записей на странице"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """List users with optional filters by role and platform."""
+    """Получить список пользователей с фильтрами."""
     q = select(User)
     if role:
         q = q.where(User.role == role)
@@ -88,49 +147,67 @@ async def list_users(
     return list(result.scalars().all())
 
 
-@users_router.get("/by_platform", response_model=schemas.UserOut)
+@users_router.get(
+    "/by_platform",
+    response_model=schemas.UserOut,
+    summary="Найти пользователя по платформе",
+    description="Возвращает пользователя по платформе и идентификатору на платформе.",
+    responses={404: {"description": "Пользователь не найден"}},
+)
 async def get_user_by_platform(
-    platform: str = Query("telegram"),
-    platform_user_id: str = Query(...),
+    platform: str = Query("telegram", description="Платформа"),
+    platform_user_id: str = Query(..., description="Идентификатор пользователя на платформе"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Get user by platform and platform_user_id."""
+    """Найти пользователя по платформе."""
     user = await db.scalar(
         select(User).where(
             User.platform == platform, User.platform_user_id == platform_user_id
         )
     )
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
 
 
-@users_router.get("/by_email", response_model=schemas.UserOut)
+@users_router.get(
+    "/by_email",
+    response_model=schemas.UserOut,
+    summary="Найти пользователя по email",
+    description="Возвращает пользователя по адресу электронной почты.",
+    responses={404: {"description": "Пользователь не найден"}},
+)
 async def get_user_by_email(
-    email: str = Query(...),
+    email: str = Query(..., description="Электронная почта пользователя"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Get user by email address."""
+    """Найти пользователя по email."""
     user = await db.scalar(select(User).where(User.email.ilike(email)))
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
 
 
-@users_router.get("/by_phone", response_model=schemas.UserOut)
+@users_router.get(
+    "/by_phone",
+    response_model=schemas.UserOut,
+    summary="Найти пользователя по телефону",
+    description="Возвращает пользователя по номеру телефона.",
+    responses={404: {"description": "Пользователь не найден"}},
+)
 async def get_user_by_phone(
-    phone: str = Query(...),
+    phone: str = Query(..., description="Номер телефона пользователя"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Get user by phone number."""
+    """Найти пользователя по номеру телефона."""
     if phone and not phone.startswith("+"):
         phone = "+" + phone
     user = await db.scalar(select(User).where(User.phone == phone))
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
 
 
