@@ -278,7 +278,8 @@ services:
     ports:
       - "4000:4000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PORT: 4000
       DATABASE_URL: postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-monolith:5432/${MONOLITH_DB_NAME:-monolith_db}
@@ -344,7 +345,8 @@ services:
     ports:
       - "4010:4010"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PORT: 4010
       # Read-only connection to monolith PostgreSQL
@@ -490,7 +492,8 @@ services:
     ports:
       - "3001:3000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
@@ -537,7 +540,8 @@ services:
     ports:
       - "4006:4006"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PORT: 4006
       # Consumes monolith.* Kafka topics

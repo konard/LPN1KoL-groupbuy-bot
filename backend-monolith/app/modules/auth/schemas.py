@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class RegisterRequest(BaseModel):
     email: EmailStr = Field(..., description="Электронная почта пользователя", example="user@example.com")
-    password: str = Field(..., min_length=6, description="Пароль пользователя (минимум 6 символов)", example="securepassword123")
+    password: str = Field(..., min_length=6, max_length=72, description="Пароль пользователя (минимум 6, максимум 72 символа)", example="securepassword123")
     platform: str = Field("websocket", description="Платформа (telegram, websocket и т.д.)")
     platform_user_id: str | None = Field(None, description="Идентификатор пользователя на платформе")
     username: str | None = Field(None, description="Имя пользователя (никнейм)")
