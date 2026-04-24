@@ -1,0 +1,58 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://eventflow:eventflow@postgres:5432/eventflow}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-amqp://eventflow:eventflow@rabbitmq:5672//}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      EVENT_CACHE_TTL: ${EVENT_CACHE_TTL:-60}
+      TICKET_OUTPUT_DIR: ${TICKET_OUTPUT_DIR:-/app/tickets}
+    volumes:
+      - tickets:/app/tickets
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+
+  worker:
+    build: .
+    command: celery -A app.tasks.celery_app worker --loglevel=INFO
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://eventflow:eventflow@postgres:5432/eventflow}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-amqp://eventflow:eventflow@rabbitmq:5672//}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      TICKET_OUTPUT_DIR: ${TICKET_OUTPUT_DIR:-/app/tickets}
+    volumes:
+      - tickets:/app/tickets
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: eventflow
+      POSTGRES_USER: eventflow
+      POSTGRES_PASSWORD: eventflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: eventflow
+      RABBITMQ_DEFAULT_PASS: eventflow
+    ports:
+      - "15672:15672"
+
+volumes:
+  postgres_data:
+  tickets:
