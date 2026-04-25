@@ -390,6 +390,12 @@ services:
     networks:
       - frontend-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -461,7 +467,7 @@ services:
       user-frontend:
         condition: service_healthy
       admin-frontend:
-        condition: service_started
+        condition: service_healthy
     networks:
       - frontend-network
       - backend-network
