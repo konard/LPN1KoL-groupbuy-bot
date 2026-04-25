@@ -10,6 +10,7 @@ from app.kafka_producer import stop_producer
 from app.modules.auth.router import router as auth_router, users_router
 from app.modules.chat.router import router as chat_router
 from app.modules.invitations.router import router as invitations_router
+from app.modules.intelligence.router import router as intelligence_router
 from app.modules.news.router import router as news_router
 from app.modules.notification.router import router as notify_router
 from app.modules.payment.router import escrow_router, router as wallet_router
@@ -50,6 +51,7 @@ app = FastAPI(
         "- **Новости** — лента новостей от организаторов и поставщиков\n"
         "- **Поставщик** — карта компании, прайс-листы, закрывающие документы\n"
         "- **Приглашения** — приглашение поставщиков и покупателей в закупки\n"
+        "- **Интеллект закупок** — прогноз достижения цели, риск-факторы, рекомендации, планы уведомлений и доставки\n"
     ),
     lifespan=lifespan,
     docs_url="/docs",
@@ -94,6 +96,7 @@ app.include_router(news_router)
 app.include_router(requests_router)
 app.include_router(supplier_router)
 app.include_router(invitations_router)
+app.include_router(intelligence_router)
 
 
 @app.get("/health")
