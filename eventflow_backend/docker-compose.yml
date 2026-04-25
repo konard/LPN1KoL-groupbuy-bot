@@ -10,6 +10,11 @@ services:
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       EVENT_CACHE_TTL: ${EVENT_CACHE_TTL:-60}
       TICKET_OUTPUT_DIR: ${TICKET_OUTPUT_DIR:-/app/tickets}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-30}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
     volumes:
       - tickets:/app/tickets
     depends_on:
@@ -26,6 +31,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-amqp://eventflow:eventflow@rabbitmq:5672//}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       TICKET_OUTPUT_DIR: ${TICKET_OUTPUT_DIR:-/app/tickets}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me}
     volumes:
       - tickets:/app/tickets
     depends_on:

@@ -5,14 +5,20 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utc_now() -> datetime:
+    """Return the current UTC datetime."""
+
     return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
+    """Declarative SQLAlchemy base."""
+
     pass
 
 
 class Clinic(Base):
+    """Clinic available for appointment booking."""
+
     __tablename__ = "clinics"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -23,6 +29,8 @@ class Clinic(Base):
 
 
 class Appointment(Base):
+    """Appointment linked to a Telegram user id."""
+
     __tablename__ = "appointments"
 
     id: Mapped[int] = mapped_column(primary_key=True)

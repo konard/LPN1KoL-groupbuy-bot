@@ -1,12 +1,17 @@
 import asyncio
 
+import structlog
 from celery import Celery
 from sqlalchemy import select
 
 from .config import settings
 from .database import AsyncSessionLocal
 from .models import Appointment, Clinic
+from .observability import configure_logging
 
+
+configure_logging()
+logger = structlog.get_logger(__name__)
 
 celery_app = Celery(
     "medibot",
@@ -17,6 +22,8 @@ celery_app = Celery(
 
 @celery_app.task(name="medibot.send_appointment_reminder")
 def send_appointment_reminder(appointment_id: int) -> dict[str, int | str]:
+    """Send a scheduled appointment reminder."""
+
     return asyncio.run(_send_appointment_reminder(appointment_id))
 
 
@@ -31,12 +38,15 @@ async def _send_appointment_reminder(
         )
         row = result.first()
         if row is None:
+            logger.error("appointment_missing", appointment_id=appointment_id)
             return {"appointment_id": appointment_id, "status": "missing"}
 
         appointment, clinic = row
-        message = (
-            f"Reminder for user {appointment.telegram_user_id}: "
-            f"{clinic.name} at {appointment.appointment_at.isoformat()}"
+        logger.info(
+            "appointment_reminder_sent",
+            appointment_id=appointment.id,
+            telegram_user_id=appointment.telegram_user_id,
+            clinic=clinic.name,
+            appointment_at=appointment.appointment_at.isoformat(),
         )
-        print(message, flush=True)
         return {"appointment_id": appointment.id, "status": "sent"}
