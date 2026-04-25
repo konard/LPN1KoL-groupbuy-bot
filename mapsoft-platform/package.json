@@ -1,0 +1,19 @@
+{
+  "name": "mapsoft-platform",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "axios": "^1.7.0",
+    "chart.js": "^4.4.0",
+    "vite": "^7.0.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {}
+}
