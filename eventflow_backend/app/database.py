@@ -11,10 +11,14 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
+    """Yield an async database session for FastAPI dependencies."""
+
     async with AsyncSessionLocal() as session:
         yield session
 
 
 async def init_db() -> None:
+    """Create database tables for local demo startup."""
+
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
