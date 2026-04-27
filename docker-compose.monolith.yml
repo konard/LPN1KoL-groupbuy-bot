@@ -376,30 +376,9 @@ services:
         limits:
           memory: 128M
 
-  # React static admin frontend served by Nginx
-  # Nginx proxies /api/admin/* to admin-backend
-  admin-frontend:
-    build:
-      context: ./admin-frontend
-      dockerfile: Dockerfile
-    ports:
-      - "8080:80"
-    depends_on:
-      admin-backend:
-        condition: service_started
-    networks:
-      - frontend-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 32M
+  # NOTE: admin-frontend (React/Nginx) is not used in the monolith deployment.
+  # The admin panel is served by user-frontend (Next.js) at /admin-panel/,
+  # mirroring docker-compose.unified.yml. See user-frontend/pages/admin-panel/index.js.
 
   # ─────────────────────────────────────────────
   # User Personal Account (React + Vite, served by Nginx)
@@ -465,8 +444,6 @@ services:
       admin-backend:
         condition: service_started
       user-frontend:
-        condition: service_healthy
-      admin-frontend:
         condition: service_healthy
     networks:
       - frontend-network

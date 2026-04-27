@@ -2,30 +2,12 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
-
-# bcrypt accepts at most 72 bytes of password input (UTF-8 encoded).
-# Pydantic's max_length counts Unicode code points, not bytes, so a password
-# with multi-byte characters (e.g. Cyrillic, Chinese, emoji) can pass the
-# character-length check while still exceeding 72 bytes and causing bcrypt to
-# raise "password cannot be longer than 72 bytes".  The validator below
-# enforces the byte limit explicitly.
-_BCRYPT_MAX_BYTES = 72
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr = Field(..., description="Электронная почта пользователя", example="user@example.com")
-    password: str = Field(..., min_length=6, description="Пароль пользователя (минимум 6, максимум 72 байта в UTF-8)", example="securepassword123")
-
-    @field_validator("password")
-    @classmethod
-    def password_must_fit_bcrypt(cls, v: str) -> str:
-        if len(v.encode("utf-8")) > _BCRYPT_MAX_BYTES:
-            raise ValueError(
-                f"password must be at most {_BCRYPT_MAX_BYTES} bytes when encoded as UTF-8; "
-                f"the provided password is {len(v.encode('utf-8'))} bytes"
-            )
-        return v
+    password: str = Field(..., description="Пароль пользователя", example="securepassword123")
     platform: str = Field("websocket", description="Платформа (telegram, websocket и т.д.)")
     platform_user_id: str | None = Field(None, description="Идентификатор пользователя на платформе")
     username: str | None = Field(None, description="Имя пользователя (никнейм)")

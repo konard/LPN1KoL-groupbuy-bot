@@ -74,13 +74,13 @@ class TestAdminPanelNginxRouting:
                 "location /admin-panel/ block must contain a proxy_pass directive"
             )
 
-    def test_admin_frontend_upstream_defined(self):
-        """admin_frontend upstream must reference admin-frontend container."""
-        assert "upstream admin_frontend" in self.conf, (
-            "admin_frontend upstream is not defined in nginx-monolith.conf"
-        )
-        assert "server admin-frontend:80" in self.conf, (
-            "admin_frontend upstream does not point to admin-frontend:80"
+    def test_admin_frontend_upstream_absent(self):
+        """admin_frontend upstream must NOT exist — issue #107 removed the
+        admin-frontend service from the monolith deployment.  The admin panel
+        is now served entirely by user-frontend at /admin-panel/."""
+        assert "upstream admin_frontend" not in self.conf, (
+            "admin_frontend upstream must be removed from nginx-monolith.conf; "
+            "the admin-frontend service no longer exists in the monolith deployment"
         )
 
     def test_admin_panel_location_count(self):
