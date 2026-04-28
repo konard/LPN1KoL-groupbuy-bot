@@ -399,6 +399,10 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: "0.0.0.0"
+      # Server-side proxy destination for Next.js rewrites (next.config.js).
+      # Requests from the browser go to nginx → /api/* → backend-monolith:4000.
+      # Requests from Next.js SSR go directly here without going through nginx.
+      BACKEND_MONOLITH_URL: http://backend-monolith:4000
     depends_on:
       backend-monolith:
         condition: service_healthy
@@ -428,13 +432,13 @@ services:
     image: nginx:alpine
     container_name: groupbuy-nginx-monolith
     restart: unless-stopped
-    entrypoint: ["/docker-entrypoint-custom.sh"]
+    entrypoint: ["/docker-entrypoint.sh"]
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./infrastructure/nginx/nginx-monolith.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
+      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl
       - certbot_webroot:/var/www/certbot:ro
       - letsencrypt_data:/etc/letsencrypt:ro
