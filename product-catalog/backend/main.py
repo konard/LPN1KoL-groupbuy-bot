@@ -131,24 +131,24 @@ def get_token_payload(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> UserModel:
     payload = get_token_payload(token)
     user_id = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
     user = db.query(UserModel).filter(UserModel.id == int(user_id)).first()
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Пользователь не найден или неактивен")
     return user
 
 
 def require_role(*roles: UserRole):
     def _dep(user: UserModel = Depends(get_current_user)):
         if user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
         return user
     return _dep
 
@@ -184,7 +184,7 @@ class CategoryRepository:
     def update(self, cat_id: int, name: str) -> CategoryModel:
         cat = self.get(cat_id)
         if not cat:
-            raise HTTPException(status_code=404, detail="Category not found")
+            raise HTTPException(status_code=404, detail="Категория не найдена")
         cat.name = name
         self.db.commit()
         self.db.refresh(cat)
@@ -193,7 +193,7 @@ class CategoryRepository:
     def delete(self, cat_id: int):
         cat = self.get(cat_id)
         if not cat:
-            raise HTTPException(status_code=404, detail="Category not found")
+            raise HTTPException(status_code=404, detail="Категория не найдена")
         self.db.delete(cat)
         self.db.commit()
 
@@ -229,7 +229,7 @@ class ProductRepository:
     def update(self, product_id: int, data: dict) -> ProductModel:
         product = self.get(product_id)
         if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
+            raise HTTPException(status_code=404, detail="Продукт не найден")
         for k, v in data.items():
             setattr(product, k, v)
         self.db.commit()
@@ -239,7 +239,7 @@ class ProductRepository:
     def delete(self, product_id: int):
         product = self.get(product_id)
         if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
+            raise HTTPException(status_code=404, detail="Продукт не найден")
         self.db.delete(product)
         self.db.commit()
 
@@ -271,21 +271,21 @@ class UserRepository:
     def update_password(self, user_id: int, new_password: str):
         user = self.get(user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
         user.hashed_password = hash_password(new_password)
         self.db.commit()
 
     def set_active(self, user_id: int, is_active: bool):
         user = self.get(user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
         user.is_active = is_active
         self.db.commit()
 
     def delete(self, user_id: int):
         user = self.get(user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
         self.db.delete(user)
         self.db.commit()
 
@@ -482,9 +482,9 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     repo = UserRepository(db)
     user = repo.get_by_username(form.username)
     if not user or not verify_password(form.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Неверные учётные данные")
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is blocked")
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     access = create_token({"sub": str(user.id), "role": user.role}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     refresh = create_token({"sub": str(user.id), "type": "refresh"}, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
     log_action(db, user.id, "login", f"username={user.username}")
@@ -495,11 +495,11 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
     payload = get_token_payload(body.refresh_token)
     if payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Not a refresh token")
+        raise HTTPException(status_code=401, detail="Токен не является refresh-токеном")
     user_id = payload.get("sub")
     user = db.query(UserModel).filter(UserModel.id == int(user_id)).first()
     if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+        raise HTTPException(status_code=401, detail="Пользователь не найден или неактивен")
     access = create_token({"sub": str(user.id), "role": user.role}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return TokenResponse(access_token=access)
 
@@ -523,7 +523,7 @@ def create_category(
 ):
     repo = CategoryRepository(db)
     if repo.get_by_name(data.name):
-        raise HTTPException(status_code=400, detail="Category name already exists")
+        raise HTTPException(status_code=400, detail="Категория с таким именем уже существует")
     cat = repo.create(data.name)
     log_action(db, user.id, "create_category", f"name={data.name}")
     return cat
@@ -539,7 +539,7 @@ def update_category(
     repo = CategoryRepository(db)
     existing = repo.get_by_name(data.name)
     if existing and existing.id != cat_id:
-        raise HTTPException(status_code=400, detail="Category name already exists")
+        raise HTTPException(status_code=400, detail="Категория с таким именем уже существует")
     cat = repo.update(cat_id, data.name)
     log_action(db, user.id, "update_category", f"id={cat_id} name={data.name}")
     return cat
@@ -578,7 +578,7 @@ def create_product(
 ):
     cat = CategoryRepository(db).get(data.category_id)
     if not cat:
-        raise HTTPException(status_code=400, detail="Category not found")
+        raise HTTPException(status_code=400, detail="Категория не найдена")
     product = ProductRepository(db).create(data.model_dump())
     log_action(db, user.id, "create_product", f"name={data.name}")
     return product_out(product, include_special=True)
@@ -592,7 +592,7 @@ def get_product(
 ):
     product = ProductRepository(db).get(product_id)
     if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Продукт не найден")
     include_special = user.role in (UserRole.advanced_user, UserRole.admin)
     return product_out(product, include_special)
 
@@ -608,7 +608,7 @@ def update_product(
     if "category_id" in updates:
         cat = CategoryRepository(db).get(updates["category_id"])
         if not cat:
-            raise HTTPException(status_code=400, detail="Category not found")
+            raise HTTPException(status_code=400, detail="Категория не найдена")
     product = ProductRepository(db).update(product_id, updates)
     log_action(db, user.id, "update_product", f"id={product_id}")
     include_special = user.role in (UserRole.advanced_user, UserRole.admin)
@@ -639,7 +639,7 @@ async def convert_usd(
             rate = data["Cur_OfficialRate"] / data["Cur_Scale"]
     except Exception as e:
         logger.error("NBRB API error: %s", e)
-        raise HTTPException(status_code=502, detail="Failed to fetch exchange rate from NBRB")
+        raise HTTPException(status_code=502, detail="Не удалось получить курс валюты от НБРБ")
     price_usd = amount / rate
     return UsdConversion(price_rub=amount, price_usd=round(price_usd, 4), rate=round(rate, 4))
 
@@ -661,7 +661,7 @@ def admin_create_user(
 ):
     repo = UserRepository(db)
     if repo.get_by_username(data.username):
-        raise HTTPException(status_code=400, detail="Username already taken")
+        raise HTTPException(status_code=400, detail="Имя пользователя уже занято")
     new_user = repo.create(data.username, data.password, data.role)
     log_action(db, user.id, "admin_create_user", f"username={data.username} role={data.role}")
     return new_user
@@ -676,7 +676,7 @@ def admin_block_user(
     repo = UserRepository(db)
     target = repo.get(user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     repo.set_active(user_id, not target.is_active)
     log_action(db, admin.id, "admin_toggle_block", f"user_id={user_id} is_active={not target.is_active}")
     db.refresh(target)
