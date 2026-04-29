@@ -6,15 +6,15 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr = Field(..., description="Электронная почта пользователя", example="user@example.com")
-    password: str = Field(..., description="Пароль пользователя", example="securepassword123")
+    email: EmailStr = Field(..., description="Электронная почта пользователя", json_schema_extra={"example": "user@example.com"})
+    password: str = Field(..., min_length=1, description="Пароль пользователя (любой непустой)", json_schema_extra={"example": "securepassword123"})
     platform: str = Field("websocket", description="Платформа (telegram, websocket и т.д.)")
     platform_user_id: str | None = Field(None, description="Идентификатор пользователя на платформе")
     username: str | None = Field(None, description="Имя пользователя (никнейм)")
     first_name: str | None = Field(None, description="Имя")
     last_name: str | None = Field(None, description="Фамилия")
     phone: str | None = Field(None, description="Контактный телефон")
-    role: str = Field("buyer", description="Роль пользователя: buyer | organizer | supplier", example="buyer")
+    role: str = Field("buyer", description="Роль пользователя: buyer | organizer | supplier", json_schema_extra={"example": "buyer"})
     language_code: str = Field("ru", description="Код языка интерфейса")
 
     model_config = {
@@ -31,9 +31,9 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr = Field(..., description="Электронная почта пользователя", example="user@example.com")
-    password: str = Field(..., description="Пароль пользователя", example="securepassword123")
-    totp_code: str | None = Field(None, description="Код двухфакторной аутентификации (если включена)", example="123456")
+    email: EmailStr = Field(..., description="Электронная почта пользователя", json_schema_extra={"example": "user@example.com"})
+    password: str = Field(..., min_length=1, description="Пароль пользователя (любой непустой)", json_schema_extra={"example": "securepassword123"})
+    totp_code: str | None = Field(None, description="Код двухфакторной аутентификации (если включена)", json_schema_extra={"example": "123456"})
 
     model_config = {
         "json_schema_extra": {
@@ -122,7 +122,7 @@ class UserBalanceOut(BaseModel):
 
 
 class UpdateBalanceRequest(BaseModel):
-    amount: Decimal = Field(..., description="Сумма изменения баланса (положительная — пополнение, отрицательная — списание)", example="500.00")
+    amount: Decimal = Field(..., description="Сумма изменения баланса (положительная — пополнение, отрицательная — списание)", json_schema_extra={"example": "500.00"})
 
     model_config = {
         "json_schema_extra": {"example": {"amount": "500.00"}}
@@ -146,4 +146,4 @@ class TOTPSetupResponse(BaseModel):
 
 
 class TOTPVerifyRequest(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6, description="6-значный TOTP-код", example="123456")
+    code: str = Field(..., min_length=6, max_length=6, description="6-значный TOTP-код", json_schema_extra={"example": "123456"})

@@ -13,8 +13,9 @@ version: "3.9"
 #                       Alembic migrations, Kafka producer for analytics-raw topic
 #
 #   admin-backend     — NestJS, read-only/CRUD access to monolith DB
-#   admin-frontend    — React static build served by Nginx; proxies /api/admin/* to admin-backend
-#   user-frontend     — Next.js SSR app (port 3000); nginx proxies / and /lk/ to it
+#   user-frontend     — Next.js SSR app (port 3000); nginx proxies /, /lk/, /admin-panel/,
+#                       /admin and /account to it (admin panel and personal account
+#                       are Next.js pages — admin-frontend service was removed in #107)
 #   nginx             — Reverse proxy / public entry point (ports 80, 443)
 #                       Routes: /api/admin/* → admin-backend, /api/* → backend-monolith,
 #                               /ws/* → backend-monolith (Socket.IO), / → user-frontend
@@ -374,28 +375,6 @@ services:
         limits:
           memory: 128M
 
-  # React SPA admin panel served by Nginx; proxies /api/admin/* to admin-backend
-  admin-frontend:
-    build:
-      context: ./admin-frontend
-      dockerfile: Dockerfile
-    depends_on:
-      admin-backend:
-        condition: service_healthy
-    networks:
-      - frontend-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-
   # ─────────────────────────────────────────────
   # User Personal Account (Next.js SSR app)
   # ─────────────────────────────────────────────
@@ -463,8 +442,6 @@ services:
         condition: service_healthy
       admin-backend:
         condition: service_started
-      admin-frontend:
-        condition: service_healthy
       user-frontend:
         condition: service_healthy
     networks:
