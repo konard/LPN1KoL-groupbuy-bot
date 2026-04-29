@@ -23,8 +23,6 @@ version: "3.9"
 #   gateway           — Go (gorilla/mux) API gateway; all service URLs point to backend-monolith
 #   analytics         — Python FastAPI; separate service, receives events from monolith via Kafka
 #   bot               — Telegram/groupbuy bot (calls backend-monolith API)
-#   telegram-adapter  — Telegram webhook adapter
-#   mattermost-adapter — Mattermost webhook adapter
 #
 #   Removed (consolidated into backend-monolith):
 #   - django-admin (Django admin panel)  → admin-backend (NestJS) + admin-frontend
@@ -450,13 +448,13 @@ services:
     image: nginx:alpine
     container_name: groupbuy-nginx-monolith
     restart: unless-stopped
-    entrypoint: ["/docker-entrypoint.sh"]
+    entrypoint: ["/docker-entrypoint-custom.sh"]
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./infrastructure/nginx/nginx-monolith.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl
       - certbot_webroot:/var/www/certbot:ro
       - letsencrypt_data:/etc/letsencrypt:ro
@@ -621,52 +619,6 @@ services:
       resources:
         limits:
           memory: 32M
-
-  telegram-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
-    build:
-      context: ./adapters/telegram
-    container_name: groupbuy-telegram-adapter-monolith
-    restart: unless-stopped
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
-      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
-      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
-    depends_on:
-      bot:
-        condition: service_started
-    networks:
-      - backend-network
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  mattermost-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
-    build:
-      context: ./adapters/mattermost
-    container_name: groupbuy-mattermost-adapter-monolith
-    restart: unless-stopped
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - MATTERMOST_URL=${MATTERMOST_URL:-}
-      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN:-}
-      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL:-}
-      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
-      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
-    ports:
-      - "8002:8002"
-    depends_on:
-      bot:
-        condition: service_started
-    networks:
-      - backend-network
-    deploy:
-      resources:
-        limits:
-          memory: 64M
 
   # ─────────────────────────────────────────────
   # Monitoring
