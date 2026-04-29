@@ -436,13 +436,13 @@ services:
     image: nginx:alpine
     container_name: groupbuy-nginx
     restart: on-failure:3
-    entrypoint: ["/docker-entrypoint.sh"]
+    entrypoint: ["/docker-entrypoint-custom.sh"]
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./infrastructure/nginx/nginx-api.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl
       - certbot_webroot:/var/www/certbot:ro
       - letsencrypt_data:/etc/letsencrypt:ro
