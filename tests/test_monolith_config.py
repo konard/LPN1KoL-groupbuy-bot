@@ -80,10 +80,10 @@ class TestNginxMonolithConf:
         )
 
     def test_root_location_proxies_to_user_frontend(self):
-        """/ location must proxy to user-frontend:3000."""
+        """/ location must proxy to user-frontend:80."""
         nginx = load_nginx()
-        assert "user-frontend:3000" in nginx, (
-            "nginx-monolith.conf does not reference user-frontend:3000"
+        assert "user-frontend:80" in nginx, (
+            "nginx-monolith.conf does not reference user-frontend:80"
         )
 
     def test_both_http_and_https_servers_have_socket_io(self):

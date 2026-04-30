@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class RegisterRequest(BaseModel):
     email: EmailStr = Field(..., description="Электронная почта пользователя", json_schema_extra={"example": "user@example.com"})
-    password: str = Field(..., min_length=1, description="Пароль пользователя (любой непустой)", json_schema_extra={"example": "securepassword123"})
+    password: str = Field(..., description="Пароль пользователя", json_schema_extra={"example": "securepassword123"})
     platform: str = Field("websocket", description="Платформа (telegram, websocket и т.д.)")
     platform_user_id: str | None = Field(None, description="Идентификатор пользователя на платформе")
     username: str | None = Field(None, description="Имя пользователя (никнейм)")
@@ -32,7 +32,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr = Field(..., description="Электронная почта пользователя", json_schema_extra={"example": "user@example.com"})
-    password: str = Field(..., min_length=1, description="Пароль пользователя (любой непустой)", json_schema_extra={"example": "securepassword123"})
+    password: str = Field(..., description="Пароль пользователя", json_schema_extra={"example": "securepassword123"})
     totp_code: str | None = Field(None, description="Код двухфакторной аутентификации (если включена)", json_schema_extra={"example": "123456"})
 
     model_config = {

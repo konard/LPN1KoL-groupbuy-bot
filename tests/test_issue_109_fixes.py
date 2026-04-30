@@ -4,20 +4,11 @@ Tests for issue #109: docker-compose.monolith.yml startup bugs.
 Bug #1: groupbuy-nginx-monolith fails to start with
         "exec /docker-entrypoint-custom.sh: no such file or directory".
 
-        Root cause: docker-compose mounts
-            ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
-        and the service uses exec-form ENTRYPOINT
-            entrypoint: ["/docker-entrypoint-custom.sh"]
-
-        Docker preserves host file permissions on bind mounts. The host file
-        was committed to git with mode 100644 (no executable bit), so the
-        kernel's execve() refuses it with ENOENT-style "no such file or
-        directory". Without nginx, the whole stack is unreachable, which the
-        user perceives as "frontend doesn't start" and "auth doesn't work" —
-        the secondary symptoms in this issue.
-
-        Fix: track the script with mode 100755 (executable) in git so the
-        bind mount inherits +x.
+        The original fix made the bind-mounted script executable. Issue #131
+        supersedes that for the monolith stack: nginx now uses an inline
+        /bin/sh entrypoint so startup no longer depends on a host file being
+        mounted at /docker-entrypoint-custom.sh. The shared script remains
+        tracked and executable for docker-compose.unified.yml.
 
 Bug #2 / #3 (frontend startup, auth flow): nginx is the public entry point
         for both /lk/ (user-frontend) and /api/v1/auth/* (backend-monolith).
@@ -110,28 +101,38 @@ class TestNginxEntrypointExecutable:
 
 
 class TestNginxEntrypointWiring:
-    """The monolith and unified compose files must mount and exec the script
-    the same way so a single fix applies to both."""
+    """The monolith entrypoint must be self-contained; unified still uses
+    the shared script."""
 
-    @pytest.mark.parametrize("compose_path", [COMPOSE_MONOLITH, COMPOSE_UNIFIED])
-    def test_nginx_entrypoint_pointer(self, compose_path):
-        compose = _load(compose_path)
+    def test_monolith_nginx_uses_inline_entrypoint(self):
+        compose = _load(COMPOSE_MONOLITH)
+        nginx = compose["services"]["nginx"]
+        assert nginx.get("entrypoint") == ["/bin/sh", "-c"]
+        assert "exec nginx -g" in nginx.get("command", "")
+
+    def test_monolith_nginx_does_not_mount_entrypoint_script(self):
+        compose = _load(COMPOSE_MONOLITH)
+        nginx = compose["services"]["nginx"]
+        volumes = nginx.get("volumes", [])
+        assert not any("/docker-entrypoint-custom.sh" in v for v in volumes)
+
+    def test_unified_nginx_entrypoint_pointer(self):
+        compose = _load(COMPOSE_UNIFIED)
         nginx = compose["services"]["nginx"]
         entrypoint = nginx.get("entrypoint")
         assert entrypoint == ["/docker-entrypoint-custom.sh"], (
-            f"{compose_path.name}: nginx entrypoint must be "
+            f"{COMPOSE_UNIFIED.name}: nginx entrypoint must be "
             "['/docker-entrypoint-custom.sh'] (exec form). Got: "
             f"{entrypoint!r}"
         )
 
-    @pytest.mark.parametrize("compose_path", [COMPOSE_MONOLITH, COMPOSE_UNIFIED])
-    def test_nginx_mounts_entrypoint_script(self, compose_path):
-        compose = _load(compose_path)
+    def test_unified_nginx_mounts_entrypoint_script(self):
+        compose = _load(COMPOSE_UNIFIED)
         nginx = compose["services"]["nginx"]
         volumes = nginx.get("volumes", [])
         target = "./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro"
         assert target in volumes, (
-            f"{compose_path.name}: nginx must mount the host script at "
+            f"{COMPOSE_UNIFIED.name}: nginx must mount the host script at "
             f"/docker-entrypoint-custom.sh. Got volumes: {volumes}"
         )
 
@@ -172,8 +173,8 @@ class TestFrontendStartup:
 
     def test_nginx_routes_root_to_user_frontend(self):
         nginx = NGINX_MONOLITH_CONF.read_text()
-        assert "user-frontend:3000" in nginx, (
-            "nginx-monolith.conf must proxy user traffic to user-frontend:3000"
+        assert "user-frontend:80" in nginx, (
+            "nginx-monolith.conf must proxy user traffic to user-frontend:80"
         )
 
 
