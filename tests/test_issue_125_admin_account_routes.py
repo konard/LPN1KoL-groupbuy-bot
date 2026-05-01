@@ -12,9 +12,8 @@ Tests for issue #125:
      (rendered as a white screen). Fix: add pages at `/admin` and
      `/account` that render the same admin and personal-account UI.
 
-  2. Backend password validation must be removed: any password with
-     length >= 1 must be accepted (no complexity requirements). The
-     RegisterRequest schema enforces only `min_length=1`.
+  2. Backend password validation must be removed. Issue #131 supersedes the
+     earlier length >= 1 rule: RegisterRequest must not enforce min_length.
 
   3. Swagger documentation must reflect actual endpoints. The OpenAPI
      description (generated from FastAPI) advertises the auth endpoints
@@ -116,12 +115,12 @@ class TestNginxRoutesAdminAndAccount:
 
 
 # ---------------------------------------------------------------------------
-# 3. Password validation: length >= 1, no complexity constraints
+# 3. Password validation: no length or complexity constraints
 # ---------------------------------------------------------------------------
 
 
 class TestPasswordValidation:
-    """RegisterRequest accepts any password with length >= 1."""
+    """RegisterRequest accepts any password string."""
 
     @pytest.fixture
     def schema_module(self):
@@ -135,12 +134,10 @@ class TestPasswordValidation:
         req = schema_module.RegisterRequest(**self._payload("a"))
         assert req.password == "a"
 
-    def test_empty_password_rejected(self, schema_module):
-        """Length must be >= 1 — empty string must be rejected."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            schema_module.RegisterRequest(**self._payload(""))
+    def test_empty_password_accepted(self, schema_module):
+        """Issue #131: registration must not validate password length."""
+        req = schema_module.RegisterRequest(**self._payload(""))
+        assert req.password == ""
 
     def test_no_complexity_required(self, schema_module):
         """No special characters / digits / case requirements."""
@@ -218,11 +215,11 @@ class TestSwaggerOpenApi:
         props = components["RegisterRequest"]["properties"]
         assert "email" in props
         assert "password" in props
-        # Password must reflect the "any length >= 1" rule, exposed as
-        # min_length=1 in the schema.
-        assert props["password"].get("minLength") == 1, (
-            "Swagger password schema must declare minLength=1 to match the "
-            "'any password, length >= 1' policy."
+        # Issue #131 removed registration password validation, so OpenAPI must
+        # not advertise a minLength constraint.
+        assert "minLength" not in props["password"], (
+            "Swagger password schema must not declare minLength; registration "
+            "password validation is intentionally disabled."
         )
 
     def test_login_schema_has_email_password(self, openapi):

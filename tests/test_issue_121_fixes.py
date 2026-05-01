@@ -14,6 +14,11 @@ Bug #1: groupbuy-nginx-monolith fails to start with
         This avoids the collision with the nginx default entrypoint and
         matches the fix applied in issue #109.
 
+        Issue #131 later removed the monolith bind mount entirely: the
+        monolith nginx service now uses an inline /bin/sh command so it cannot
+        fail because /docker-entrypoint-custom.sh is absent. The unified stack
+        still uses the shared custom entrypoint script.
+
 Bug #2: telegram-adapter and mattermost-adapter services must be removed
         from docker-compose.monolith.yml as requested by the issue author.
 """
@@ -39,27 +44,37 @@ def _load(path: pathlib.Path) -> dict:
 
 
 class TestNginxEntrypointNaming:
-    """The nginx service must use /docker-entrypoint-custom.sh to avoid
-    colliding with the nginx:alpine image's built-in /docker-entrypoint.sh."""
+    """The monolith nginx service must not collide with nginx's built-in
+    entrypoint or rely on a missing bind-mounted script."""
 
-    @pytest.mark.parametrize("compose_path", [COMPOSE_MONOLITH, COMPOSE_UNIFIED])
-    def test_nginx_entrypoint_is_custom(self, compose_path):
-        compose = _load(compose_path)
+    def test_monolith_nginx_entrypoint_is_inline_shell(self):
+        compose = _load(COMPOSE_MONOLITH)
+        nginx = compose["services"]["nginx"]
+        assert nginx.get("entrypoint") == ["/bin/sh", "-c"]
+        assert "exec nginx -g" in nginx.get("command", "")
+
+    def test_monolith_nginx_does_not_mount_custom_entrypoint(self):
+        compose = _load(COMPOSE_MONOLITH)
+        nginx = compose["services"]["nginx"]
+        volumes = nginx.get("volumes", [])
+        assert not any("/docker-entrypoint-custom.sh" in v for v in volumes)
+
+    def test_unified_nginx_entrypoint_is_custom(self):
+        compose = _load(COMPOSE_UNIFIED)
         nginx = compose["services"]["nginx"]
         entrypoint = nginx.get("entrypoint")
         assert entrypoint == ["/docker-entrypoint-custom.sh"], (
-            f"{compose_path.name}: nginx entrypoint must be "
+            f"{COMPOSE_UNIFIED.name}: nginx entrypoint must be "
             "['/docker-entrypoint-custom.sh'] to avoid collision with the "
-            "nginx:alpine built-in /docker-entrypoint.sh. Got: {entrypoint!r}"
+            f"nginx:alpine built-in /docker-entrypoint.sh. Got: {entrypoint!r}"
         )
 
-    @pytest.mark.parametrize("compose_path", [COMPOSE_MONOLITH, COMPOSE_UNIFIED])
-    def test_nginx_volume_mounts_script_as_custom(self, compose_path):
-        compose = _load(compose_path)
+    def test_unified_nginx_volume_mounts_script_as_custom(self):
+        compose = _load(COMPOSE_UNIFIED)
         nginx = compose["services"]["nginx"]
         volumes = nginx.get("volumes", [])
         assert any("/docker-entrypoint-custom.sh" in v for v in volumes), (
-            f"{compose_path.name}: nginx must mount the host script at "
+            f"{COMPOSE_UNIFIED.name}: nginx must mount the host script at "
             f"/docker-entrypoint-custom.sh. Got volumes: {volumes}"
         )
         assert not any(

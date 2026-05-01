@@ -13,9 +13,9 @@ version: "3.9"
 #                       Alembic migrations, Kafka producer for analytics-raw topic
 #
 #   admin-backend     — NestJS, read-only/CRUD access to monolith DB
-#   user-frontend     — Next.js SSR app (port 3000); nginx proxies /, /lk/, /admin-panel/,
-#                       /admin and /account to it (admin panel and personal account
-#                       are Next.js pages — admin-frontend service was removed in #107)
+#   user-frontend     — React frontend (nginx, port 80); nginx proxies /, /lk/,
+#                       /admin-panel/, /admin and /account to it (the service
+#                       name is kept for existing nginx wiring)
 #   nginx             — Reverse proxy / public entry point (ports 80, 443)
 #                       Routes: /api/admin/* → admin-backend, /api/* → backend-monolith,
 #                               /ws/* → backend-monolith (Socket.IO), / → user-frontend
@@ -376,48 +376,30 @@ services:
           memory: 128M
 
   # ─────────────────────────────────────────────
-  # User Personal Account (Next.js SSR app)
+  # User Personal Account + Admin Panel frontend (React/nginx)
   # ─────────────────────────────────────────────
 
   user-frontend:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/frontend:${IMAGE_TAG:-main}
     build:
-      context: ./user-frontend
-      dockerfile: Dockerfile
-    # Next.js standalone server listens on PORT (default 3000).
-    # nginx-monolith.conf proxies / and /lk/ to user-frontend:3000.
-    # HOSTNAME=0.0.0.0 forces the Next.js standalone server to bind on all
-    # interfaces. Without it, Next.js reads the container's $HOSTNAME (which
-    # Docker sets to the container ID), resolves that to the container's primary
-    # IP, and only binds there — making localhost:3000 unreachable for the
-    # healthcheck.
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOSTNAME: "0.0.0.0"
-      # Server-side proxy destination for Next.js rewrites (next.config.js).
-      # Requests from the browser go to nginx → /api/* → backend-monolith:4000.
-      # Requests from Next.js SSR go directly here without going through nginx.
-      BACKEND_MONOLITH_URL: http://backend-monolith:4000
+      context: ./frontend-react
+    container_name: groupbuy-frontend-monolith
     depends_on:
-      backend-monolith:
-        condition: service_healthy
+      - backend-monolith
+      - admin-backend
     networks:
       - frontend-network
-    restart: unless-stopped
+    restart: on-failure:3
     healthcheck:
-      # Use node's built-in http module so the check works without wget/curl.
-      # /api/health is a Next.js API route (pages/api/health.js) and is served
-      # locally — it is not affected by the /api/:path* proxy rewrite because
-      # afterFiles rewrites only fire when no filesystem route matches.
-      test: ["CMD-SHELL", "node -e \"const h=require('http');h.get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\""]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 64M
 
   # ─────────────────────────────────────────────
   # Nginx reverse proxy (public entry point)
@@ -427,13 +409,30 @@ services:
     image: nginx:alpine
     container_name: groupbuy-nginx-monolith
     restart: unless-stopped
-    entrypoint: ["/docker-entrypoint-custom.sh"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      SSL_DIR="/etc/nginx/ssl";
+      CERT="$$SSL_DIR/fullchain.pem";
+      KEY="$$SSL_DIR/privkey.pem";
+      if [ ! -f "$$CERT" ] || [ ! -f "$$KEY" ]; then
+        echo "[nginx-entrypoint] SSL certificates not found. Generating temporary self-signed certificate...";
+        mkdir -p "$$SSL_DIR";
+        apk add --no-cache openssl >/dev/null 2>&1 || true;
+        openssl req -x509 -nodes -days 365 \
+          -newkey rsa:2048 \
+          -keyout "$$KEY" \
+          -out "$$CERT" \
+          -subj "/CN=localhost" \
+          2>/dev/null;
+        echo "[nginx-entrypoint] Temporary self-signed certificate created.";
+      fi;
+      echo "[nginx-entrypoint] Starting nginx...";
+      exec nginx -g "daemon off;";
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./infrastructure/nginx/nginx-monolith.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/docker-entrypoint.sh:/docker-entrypoint-custom.sh:ro
       - ./infrastructure/nginx/ssl:/etc/nginx/ssl
       - certbot_webroot:/var/www/certbot:ro
       - letsencrypt_data:/etc/letsencrypt:ro

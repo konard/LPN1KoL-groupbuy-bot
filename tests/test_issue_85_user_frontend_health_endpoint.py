@@ -1,18 +1,10 @@
 """
-Tests for issue #85: user-frontend container is unhealthy when running
-docker-compose.monolith.yml up --build -d.
+Tests for issue #85 and the later issue #131 frontend healthcheck changes.
 
-Root cause: The healthcheck targets the root path (/) which triggers a full
-Next.js SSR render. Any server-side rendering issue causes wget to receive
-a non-200 response, making the healthcheck fail even when the server is up.
-Additionally, the Dockerfile lacked HOSTNAME=0.0.0.0, so the ENV was only
-set in docker-compose — missing when the container is run directly.
-
-Fix:
-1. Add pages/api/health.js — a lightweight endpoint that always returns 200 OK.
-2. Update the docker-compose healthcheck to target /api/health instead of /.
-3. Add HOSTNAME=0.0.0.0 to the Dockerfile ENV so the server always binds on
-   all interfaces, regardless of how the container is launched.
+Issue #85 added a lightweight Next.js health endpoint for the historical
+user-frontend image. Issue #131 changed docker-compose.monolith.yml to run the
+React/nginx frontend used by docker-compose.unified.yml, so the compose
+healthcheck now targets nginx at / on localhost:80.
 """
 
 import pathlib
@@ -62,30 +54,30 @@ class TestHealthEndpoint:
 
 
 class TestHealthcheckConfig:
-    """docker-compose.monolith.yml healthcheck must target /api/health."""
+    """docker-compose.monolith.yml healthcheck must target the React nginx."""
 
-    def test_healthcheck_targets_api_health(self):
-        """Healthcheck must use /api/health, not root /."""
+    def test_healthcheck_targets_frontend_nginx_root(self):
+        """Healthcheck must use the frontend nginx root on port 80."""
         compose = load_compose()
         svc = compose["services"]["user-frontend"]
         hc = svc.get("healthcheck", {})
         test_cmd = " ".join(str(t) for t in hc.get("test", []))
-        assert "/api/health" in test_cmd, (
-            f"user-frontend healthcheck should target /api/health, got: {test_cmd}. "
-            "The root path / triggers a full SSR render which may fail; "
-            "/api/health is a lightweight endpoint that always returns 200."
+        assert "localhost:80/" in test_cmd, (
+            f"user-frontend healthcheck should target localhost:80/, got: {test_cmd}. "
+            "The monolith now uses the React/nginx frontend, mirroring "
+            "docker-compose.unified.yml."
         )
 
     def test_healthcheck_start_period_sufficient(self):
-        """start_period must be at least 20s for Next.js to initialize."""
+        """start_period must be at least 10s for nginx to initialize."""
         compose = load_compose()
         svc = compose["services"]["user-frontend"]
         hc = svc.get("healthcheck", {})
         start_period = hc.get("start_period", "0s")
         seconds = int(str(start_period).rstrip("s"))
-        assert seconds >= 20, (
+        assert seconds >= 10, (
             f"user-frontend healthcheck start_period is {start_period}, "
-            "should be at least 20s for Next.js standalone to initialize."
+            "should be at least 10s for the frontend nginx container to initialize."
         )
 
 
