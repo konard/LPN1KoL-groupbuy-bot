@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 import httpx
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
@@ -103,13 +103,13 @@ def _get_claims(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) ->
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     phone: str | None = None
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     totp_code: str | None = None
 

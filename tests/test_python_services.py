@@ -6,6 +6,7 @@ run without any external dependencies (no Postgres, Redis, Kafka required).
 DB calls are patched via unittest.mock.
 """
 
+import sys
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,15 +14,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+def _reload_app(service_path: str):
+    """Remove 'app' from sys.modules and insert the service path so a fresh
+    import picks up the correct service's app.py."""
+    sys.modules.pop("app", None)
+    if service_path not in sys.path:
+        sys.path.insert(0, service_path)
+
+
 # ─── Gateway ──────────────────────────────────────────────────────────────────
 
 class TestGateway:
     def setup_method(self):
-        import sys
-        # Reload module to get fresh state
-        if "services.gateway.main" in sys.modules:
-            del sys.modules["services.gateway.main"]
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/gateway")
+        sys.modules.pop("main", None)
+        gw_path = "/tmp/gh-issue-solver-1777665163791/services/gateway"
+        if gw_path not in sys.path:
+            sys.path.insert(0, gw_path)
         import main as gw_main
         self.app = gw_main.app
         self.client = TestClient(self.app, raise_server_exceptions=False)
@@ -77,8 +85,7 @@ class TestGateway:
 
 class TestAuthService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/auth-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/auth-service")
 
     def _make_token(self, user_id: str = None):
         import app as auth_app
@@ -108,10 +115,7 @@ class TestAuthService:
 
     def test_health_endpoint(self):
         import app as auth_app
-        # Create minimal test client without lifespan (no real DB)
-        # Patch the pool so lifespan doesn't fail
         with patch.object(auth_app, "_pool", MagicMock()):
-            # Test the health route handler directly
             import asyncio
             result = asyncio.run(auth_app.health())
             assert result["status"] == "ok"
@@ -122,8 +126,7 @@ class TestAuthService:
 
 class TestPurchaseService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/purchase-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/purchase-service")
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
@@ -183,8 +186,7 @@ class TestPurchaseService:
 
 class TestPaymentService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/payment-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/payment-service")
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
@@ -223,8 +225,7 @@ class TestPaymentService:
 
 class TestChatService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/chat-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/chat-service")
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
@@ -258,8 +259,7 @@ class TestChatService:
 
 class TestReputationService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/reputation-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/reputation-service")
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
@@ -300,8 +300,7 @@ class TestReputationService:
 
 class TestSearchService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/search-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/search-service")
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
@@ -358,8 +357,7 @@ class TestSearchService:
 
 class TestNotificationService:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/notification-service")
+        _reload_app("/tmp/gh-issue-solver-1777665163791/services/notification-service")
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
@@ -390,8 +388,9 @@ class TestNotificationService:
 
 class TestSharedLib:
     def setup_method(self):
-        import sys
-        sys.path.insert(0, "/tmp/gh-issue-solver-1777665163791/services/shared-lib")
+        shared_path = "/tmp/gh-issue-solver-1777665163791/services/shared-lib"
+        if shared_path not in sys.path:
+            sys.path.insert(0, shared_path)
 
     def test_create_and_decode_access_token(self):
         from groupbuy_shared.auth import create_access_token, decode_token
