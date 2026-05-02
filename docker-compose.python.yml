@@ -1,24 +1,22 @@
 version: "3.9"
 
 ##############################################################################
-# docker-compose.python.yml — unified Python/FastAPI stack
+# docker-compose.python.yml — unified Python/FastAPI stack (monolith edition)
 #
-# All backend services migrated to Python 3.11 + FastAPI.
-# Infrastructure (postgres, redis, kafka, zookeeper, centrifugo) unchanged.
+# All backend microservices (auth, purchases, payments, chat, notifications,
+# analytics, search, reputation) are merged into a single `backend` container.
+# Swagger UI available at http://localhost:4000/docs
 #
 # Usage:
 #   cp .env.example .env
 #   docker compose -f docker-compose.python.yml up -d
 #
-# Memory budget (3 GB host):
+# Memory budget (≈ 3 GB host):
 #   postgres 512M | redis 256M | zookeeper 128M | kafka 512M | centrifugo 192M
 #   django-admin 512M | core 192M | bot 256M | telegram-adapter 128M
 #   mattermost-adapter 64M | websocket-server 96M | frontend-react 64M
-#   nginx 64M | certbot 32M | gateway 128M | auth-service 128M
-#   purchase-service 128M | payment-service 128M | chat-service 128M
-#   notification-service 128M | analytics-service 256M | search-service 128M
-#   reputation-service 128M
-#   Total ≈ 3380 MB  (fits on 4 GB; trim workers on 3 GB)
+#   nginx 64M | certbot 32M | gateway 128M | backend 384M
+#   Total ≈ 3538 MB  (fits on 4 GB; previously 8 separate containers ≈ 1024 MB)
 ##############################################################################
 
 networks:
@@ -215,7 +213,7 @@ services:
         limits:
           memory: 192M
 
-  # ── Django Admin (unchanged — still used for admin panel + ML) ─────────────
+  # ── Django Admin ───────────────────────────────────────────────────────────
 
   django-admin:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
@@ -254,7 +252,63 @@ services:
         limits:
           memory: 512M
 
-  # ── Bot + Adapters (Python — unchanged) ────────────────────────────────────
+  # ── Unified Backend Monolith ───────────────────────────────────────────────
+  # All Python microservices merged into one FastAPI app.
+  # Swagger UI: http://localhost:4000/docs
+  # OpenAPI schema: http://localhost:4000/openapi.json
+
+  backend:
+    build:
+      context: ./services/backend-monolith
+      dockerfile: Dockerfile
+    container_name: groupbuy-backend
+    restart: on-failure:3
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
+      JWT_EXPIRES_MINUTES: "15"
+      JWT_REFRESH_EXPIRES_DAYS: "7"
+      BCRYPT_ROUNDS: "10"
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: backend-monolith
+      CENTRIFUGO_URL: http://centrifugo:8000
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      centrifugo:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # ── Bot + Adapters ─────────────────────────────────────────────────────────
 
   bot:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/bot:${IMAGE_TAG:-main}
@@ -411,7 +465,7 @@ services:
         condition: service_healthy
       frontend-react:
         condition: service_healthy
-      gateway:
+      backend:
         condition: service_healthy
     networks:
       - groupbuy-network
@@ -435,7 +489,7 @@ services:
         limits:
           memory: 32M
 
-  # ── Python Microservices ───────────────────────────────────────────────────
+  # ── API Gateway ────────────────────────────────────────────────────────────
 
   gateway:
     build:
@@ -448,14 +502,15 @@ services:
     environment:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      AUTH_SERVICE_URL: http://auth-service:4001
-      PURCHASE_SERVICE_URL: http://purchase-service:4002
-      PAYMENT_SERVICE_URL: http://payment-service:4003
-      CHAT_SERVICE_URL: http://chat-service:4004
-      NOTIFICATION_SERVICE_URL: http://notification-service:4005
-      ANALYTICS_SERVICE_URL: http://analytics-service:4006
-      SEARCH_SERVICE_URL: http://search-service:4007
-      REPUTATION_SERVICE_URL: http://reputation-service:4008
+      BACKEND_URL: http://backend:4000
+      AUTH_SERVICE_URL: http://backend:4000
+      PURCHASE_SERVICE_URL: http://backend:4000
+      PAYMENT_SERVICE_URL: http://backend:4000
+      CHAT_SERVICE_URL: http://backend:4000
+      NOTIFICATION_SERVICE_URL: http://backend:4000
+      ANALYTICS_SERVICE_URL: http://backend:4000
+      SEARCH_SERVICE_URL: http://backend:4000
+      REPUTATION_SERVICE_URL: http://backend:4000
       RATE_LIMIT_RPM: "60"
       VOTING_RATE_LIMIT_RPM: "120"
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
@@ -463,275 +518,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      backend:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  auth-service:
-    build:
-      context: ./services/auth-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-auth-service
-    restart: on-failure:3
-    environment:
-      PORT: 4001
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/auth_db
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
-      JWT_EXPIRES_IN_SECONDS: "900"
-      JWT_REFRESH_EXPIRES_IN_SECONDS: "604800"
-      BCRYPT_ROUNDS: "10"
-      NOTIFICATION_SERVICE_URL: http://notification-service:4005
-      CORE_API_URL: http://core:8000
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      core:
-        condition: service_healthy
-      notification-service:
-        condition: service_started
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4001/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  purchase-service:
-    build:
-      context: ./services/purchase-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-purchase-service
-    restart: on-failure:3
-    environment:
-      PORT: 4002
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/purchase_db
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_CLIENT_ID: purchase-service
-      KAFKA_GROUP_ID: purchase-group
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4002/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  payment-service:
-    build:
-      context: ./services/payment-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-payment-service
-    restart: on-failure:3
-    environment:
-      PORT: 4003
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/payment_db
-      KAFKA_BROKERS: kafka:9092
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
-      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-placeholder}
-      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-placeholder}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4003/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  chat-service:
-    build:
-      context: ./services/chat-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-chat-service
-    restart: on-failure:3
-    environment:
-      PORT: 4004
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/chat_db
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-      CENTRIFUGO_URL: http://centrifugo:8000
-      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      centrifugo:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4004/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  notification-service:
-    build:
-      context: ./services/notification-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-notification-service
-    restart: on-failure:3
-    environment:
-      PORT: 4005
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_GROUP_ID: notification-group
-      CENTRIFUGO_URL: http://centrifugo:8000
-      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
-      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      WHATSAPP_API_URL: ${WHATSAPP_API_URL:-}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      kafka:
-        condition: service_healthy
-      centrifugo:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4005/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  analytics-service:
-    build:
-      context: ./services/analytics-service
-    container_name: groupbuy-analytics-service
-    restart: on-failure:3
-    environment:
-      PORT: 4006
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_GROUP_ID: analytics-group
-      S3_ENDPOINT: ""
-      S3_ACCESS_KEY: ""
-      S3_SECRET_KEY: ""
-      S3_BUCKET: ""
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4006/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
-  search-service:
-    build:
-      context: ./services/search-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-search-service
-    restart: on-failure:3
-    environment:
-      PORT: 4007
-      ELASTICSEARCH_URL: ""
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-      KAFKA_BROKERS: kafka:9092
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4007/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  reputation-service:
-    build:
-      context: ./services/reputation-service
-      dockerfile: Dockerfile.python
-    container_name: groupbuy-reputation-service
-    restart: on-failure:3
-    environment:
-      PORT: 4008
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/reputation_db
-      KAFKA_BROKERS: kafka:9092
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4008/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
