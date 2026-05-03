@@ -1,0 +1,1 @@
+# Клиенты: Kafka, Centrifugo, Redis

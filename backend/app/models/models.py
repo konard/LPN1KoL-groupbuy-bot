@@ -12,11 +12,27 @@ class UserModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
     email = Column(String(128), unique=True, index=True, nullable=False)
+    # phone и totp из auth-service
+    phone = Column(String(32), nullable=True)
     hashed_password = Column(String(128), nullable=False)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
+    # Верификация email и TOTP 2FA
+    is_verified = Column(Boolean, default=False)
+    totp_secret = Column(String(64), nullable=True)
+    totp_enabled = Column(Boolean, default=False)
     balance = Column(Numeric(12, 2), default=Decimal("0.00"))
+    # Репутация (денормализована для производительности)
+    reputation_score = Column(Numeric(3, 2), default=Decimal("0.00"))
+    is_blocked = Column(Boolean, default=False)
+    bio = Column(Text, nullable=True)
+    avatar_url = Column(String(512), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class CategoryModel(Base):
