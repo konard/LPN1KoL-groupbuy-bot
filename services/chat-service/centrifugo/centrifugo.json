@@ -10,7 +10,6 @@
 
   "engine": "redis",
   "redis_address": "redis:6379",
-  "redis_password": "redis_secret",
   "redis_db": 1,
 
   "presence": true,
