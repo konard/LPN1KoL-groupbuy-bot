@@ -205,12 +205,21 @@ class TestComposeYamlValid:
             "websocket-server",
             "frontend-react",
             "nginx",
-            "gateway",
         ):
             assert required in services, (
                 f"docker-compose.python.yml is missing required service "
                 f"`{required}`."
             )
+
+    def test_gateway_service_absent(self):
+        """Issue #163: gateway container must be removed from docker-compose.python.yml.
+        All services in services/ are merged into the single 'backend' container."""
+        compose = load_compose()
+        assert "gateway" not in compose["services"], (
+            "docker-compose.python.yml must NOT contain a `gateway` service — "
+            "issue #163 requires all services/ microservices to be unified into "
+            "the single `backend` container."
+        )
 
 
 def _parse_duration(value):
