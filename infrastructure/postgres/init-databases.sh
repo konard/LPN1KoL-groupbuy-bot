@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Creates additional databases required by microservices on the same PostgreSQL instance.
 # This script is run automatically by the official postgres image when placed in
 # /docker-entrypoint-initdb.d/.  It runs as the postgres superuser.

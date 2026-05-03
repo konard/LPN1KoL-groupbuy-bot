@@ -133,6 +133,14 @@ class TestInfraPostgresInitScript:
             f"'/bin/bash^M: bad interpreter' inside Alpine-based containers."
         )
 
+    def test_init_script_uses_alpine_available_shell(self):
+        first_line = INIT_INFRA.read_bytes().split(b"\n")[0]
+        assert first_line == b"#!/bin/sh", (
+            f"{INIT_INFRA.relative_to(REPO)} is mounted into postgres:16-alpine, "
+            "which includes /bin/sh but not bash. Use '#!/bin/sh' so the "
+            "PostgreSQL init script can run in the Alpine image."
+        )
+
     def test_init_script_creates_all_required_databases(self):
         text = INIT_INFRA.read_text()
         for db in REQUIRED_DATABASES:

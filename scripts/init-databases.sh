@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # init-databases.sh — creates all required databases in a single PostgreSQL instance
 # Used by docker-compose.unified.yml and docker-compose.light.yml as an init script.
 # Runs automatically on first container start (when the data volume is empty).
