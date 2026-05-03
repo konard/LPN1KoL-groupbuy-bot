@@ -5,7 +5,7 @@ version: "3.9"
 #
 # All backend microservices (auth, purchases, payments, chat, notifications,
 # analytics, search, reputation) are merged into a single `backend` container.
-# Swagger UI available at http://localhost:4000/docs
+# Swagger UI available at http://localhost:8000/docs
 #
 # Usage:
 #   cp .env.example .env
@@ -13,10 +13,9 @@ version: "3.9"
 #
 # Memory budget (≈ 3 GB host):
 #   postgres 512M | redis 256M | zookeeper 128M | kafka 512M | centrifugo 192M
-#   django-admin 512M | core 192M | bot 256M | telegram-adapter 128M
-#   mattermost-adapter 64M | websocket-server 96M | frontend-react 64M
-#   nginx 64M | certbot 32M | gateway 128M | backend 384M
-#   Total ≈ 3538 MB  (fits on 4 GB; previously 8 separate containers ≈ 1024 MB)
+#   core 256M | backend 384M | bot 256M | websocket-server 96M
+#   frontend-react 64M | nginx 64M | certbot 32M
+#   Total ≈ 2464 MB  (fits on 3 GB)
 ##############################################################################
 
 networks:
@@ -307,65 +306,6 @@ services:
         limits:
           memory: 256M
 
-  telegram-proxy:
-    image: serjs/go-socks5-proxy:latest
-    container_name: groupbuy-telegram-proxy
-    restart: on-failure:3
-    networks:
-      - groupbuy-network
-    profiles:
-      - proxy
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-
-  telegram-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
-    build:
-      context: ./adapters/telegram
-    container_name: groupbuy-telegram-adapter
-    restart: on-failure:3
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
-      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
-      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
-    depends_on:
-      bot:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  mattermost-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
-    build:
-      context: ./adapters/mattermost
-    container_name: groupbuy-mattermost-adapter
-    restart: on-failure:3
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - MATTERMOST_URL=${MATTERMOST_URL}
-      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
-      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
-      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
-      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
-    ports:
-      - "8002:8002"
-    depends_on:
-      bot:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-
   websocket-server:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/websocket:${IMAGE_TAG:-main}
     build:
@@ -441,8 +381,6 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
-      gateway:
-        condition: service_healthy
     networks:
       - groupbuy-network
     deploy:
@@ -466,46 +404,3 @@ services:
         limits:
           memory: 32M
 
-  # ── API Gateway ────────────────────────────────────────────────────────────
-
-  gateway:
-    build:
-      context: ./services/gateway
-      dockerfile: Dockerfile
-    container_name: groupbuy-gateway
-    restart: on-failure:3
-    ports:
-      - "3000:3000"
-    environment:
-      PORT: 3000
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      BACKEND_URL: http://backend:4000
-      AUTH_SERVICE_URL: http://backend:4000
-      PURCHASE_SERVICE_URL: http://backend:4000
-      PAYMENT_SERVICE_URL: http://backend:4000
-      CHAT_SERVICE_URL: http://backend:4000
-      NOTIFICATION_SERVICE_URL: http://backend:4000
-      ANALYTICS_SERVICE_URL: http://backend:4000
-      SEARCH_SERVICE_URL: http://backend:4000
-      REPUTATION_SERVICE_URL: http://backend:4000
-      RATE_LIMIT_RPM: "60"
-      VOTING_RATE_LIMIT_RPM: "120"
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
