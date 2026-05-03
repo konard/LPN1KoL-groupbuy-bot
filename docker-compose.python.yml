@@ -5,7 +5,7 @@ version: "3.9"
 #
 # All backend microservices (auth, purchases, payments, chat, notifications,
 # analytics, search, reputation) are merged into a single `backend` container.
-# Swagger UI available at http://localhost:4000/docs
+# Swagger UI available at http://localhost:8000/docs
 #
 # Usage:
 #   cp .env.example .env
@@ -13,10 +13,9 @@ version: "3.9"
 #
 # Memory budget (≈ 3 GB host):
 #   postgres 512M | redis 256M | zookeeper 128M | kafka 512M | centrifugo 192M
-#   django-admin 512M | core 192M | bot 256M | telegram-adapter 128M
-#   mattermost-adapter 64M | websocket-server 96M | frontend-react 64M
-#   nginx 64M | certbot 32M | gateway 128M | backend 384M
-#   Total ≈ 3538 MB  (fits on 4 GB; previously 8 separate containers ≈ 1024 MB)
+#   core 256M | backend 384M | bot 256M | websocket-server 96M
+#   frontend-react 64M | nginx 64M | certbot 32M
+#   Total ≈ 2464 MB  (fits on 3 GB)
 ##############################################################################
 
 networks:
@@ -307,65 +306,6 @@ services:
         limits:
           memory: 256M
 
-  telegram-proxy:
-    image: serjs/go-socks5-proxy:latest
-    container_name: groupbuy-telegram-proxy
-    restart: on-failure:3
-    networks:
-      - groupbuy-network
-    profiles:
-      - proxy
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-
-  telegram-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
-    build:
-      context: ./adapters/telegram
-    container_name: groupbuy-telegram-adapter
-    restart: on-failure:3
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
-      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
-      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
-    depends_on:
-      bot:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  mattermost-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
-    build:
-      context: ./adapters/mattermost
-    container_name: groupbuy-mattermost-adapter
-    restart: on-failure:3
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - MATTERMOST_URL=${MATTERMOST_URL}
-      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
-      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
-      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
-      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
-    ports:
-      - "8002:8002"
-    depends_on:
-      bot:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-
   websocket-server:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/websocket:${IMAGE_TAG:-main}
     build:
@@ -441,8 +381,6 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
-      gateway:
-        condition: service_healthy
     networks:
       - groupbuy-network
     deploy:
@@ -450,21 +388,44 @@ services:
         limits:
           memory: 64M
 
-  certbot:
-    image: certbot/certbot:latest
-    container_name: groupbuy-certbot
-    # unless-stopped so the renewal loop keeps running after transient failures
-    restart: unless-stopped
-    volumes:
-      - letsencrypt_data:/etc/letsencrypt
-      - certbot_webroot:/var/www/certbot
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+  # ── Django Admin Panel ─────────────────────────────────────────────────────
+
+  django-admin:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
+    build:
+      context: ./core
+    container_name: groupbuy-django-admin
+    restart: on-failure:3
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
+      - DEBUG=False
+      - ALLOWED_HOSTS=localhost,localhost:8000,127.0.0.1,0.0.0.0,${DOMAIN:-},${EXTERNAL_IP:-},groupbuy-django-admin,groupbuy-core,gateway,nginx
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:8000,http://localhost:3000,http://localhost:80}
+      - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-True}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://localhost:80,http://localhost}
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-admin}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-admin}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@localhost}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     deploy:
       resources:
         limits:
-          memory: 32M
+          memory: 512M
 
   # ── API Gateway ────────────────────────────────────────────────────────────
 
@@ -509,3 +470,20 @@ services:
       resources:
         limits:
           memory: 128M
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: groupbuy-certbot
+    # unless-stopped so the renewal loop keeps running after transient failures
+    restart: unless-stopped
+    volumes:
+      - letsencrypt_data:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
