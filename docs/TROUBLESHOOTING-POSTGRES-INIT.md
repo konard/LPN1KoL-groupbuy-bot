@@ -7,6 +7,7 @@ fails on first boot with one or more of the following log lines:
 ```
 groupbuy-postgres | /usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/init-databases.sh
 groupbuy-postgres | /usr/local/bin/docker-entrypoint.sh: /docker-entrypoint-initdb.d/init-databases.sh: /bin/bash^M: bad interpreter: No such file or directory
+groupbuy-postgres | /usr/local/bin/docker-entrypoint.sh: /docker-entrypoint-initdb.d/init-databases.sh: /bin/bash: bad interpreter: No such file or directory
 groupbuy-postgres | PostgreSQL Database directory appears to contain a database; Skipping initialization
 ```
 
@@ -17,17 +18,19 @@ were never created.
 
 ## Why it happens
 
-Three independent bugs can produce this log. The repository is hardened against
-all three (see `.gitattributes`, the executable bit on `scripts/init-databases.sh`,
-and the `:ro` mount in every compose file), but if you cloned the repo on
+Four independent bugs can produce this log. The repository is hardened against
+all four (see `.gitattributes`, the `#!/bin/sh` shebang and executable bit on
+`scripts/init-databases.sh`, and the `:ro` mount in every compose file), but if
+you cloned the repo on
 Windows with `core.autocrlf=true` *before* the `.gitattributes` fix landed, your
 working copy may still be in the broken state.
 
 | # | Symptom in logs | Root cause |
 |---|---|---|
 | 1 | `bad interpreter: /bin/bash^M` | `init-databases.sh` checked out with CRLF (Windows) line endings instead of LF (Unix). |
-| 2 | `psql: ... is a directory` (silent skip) | `init-databases.sh` does not have the user-executable bit, so the postgres entrypoint *sources* it and fails under `set -e`. |
-| 3 | `Skipping initialization` | The postgres data volume already exists from a previous failed boot, so the entrypoint never runs init scripts again. |
+| 2 | `bad interpreter: /bin/bash` | The script uses `#!/bin/bash`, but `postgres:16-alpine` includes `/bin/sh` and does not install bash. |
+| 3 | `psql: ... is a directory` (silent skip) | `init-databases.sh` does not have the user-executable bit, so the postgres entrypoint *sources* it and fails under `set -e`. |
+| 4 | `Skipping initialization` | The postgres data volume already exists from a previous failed boot, so the entrypoint never runs init scripts again. |
 
 ## Fix (existing clone)
 
@@ -40,25 +43,59 @@ sed -i 's/\r$//' scripts/init-databases.sh infrastructure/postgres/init-database
 # or:
 # dos2unix scripts/init-databases.sh infrastructure/postgres/init-databases.sh
 
-# 2. Restore the executable bit (so postgres-entrypoint runs the script
+# 2. Make sure the script uses the shell available in postgres:16-alpine.
+sed -i '1s|^#!.*|#!/bin/sh|' scripts/init-databases.sh infrastructure/postgres/init-databases.sh
+
+# 3. Restore the executable bit (so postgres-entrypoint runs the script
 #    instead of sourcing it).
 chmod +x scripts/init-databases.sh infrastructure/postgres/init-databases.sh
 
-# 3. Wipe the half-initialized postgres data volume so the entrypoint
+# 4. Wipe the half-initialized postgres data volume so the entrypoint
 #    actually runs init-databases.sh again.
 #    WARNING: this destroys all local postgres data — only do this on
 #    a development machine.
 docker compose -f docker-compose.python.yml down -v
-docker compose -f docker-compose.python.yml up -d
+docker compose -f docker-compose.python.yml up --build -d
 ```
 
-After step 3 the postgres logs should show the five `CREATE DATABASE` lines and
+After step 4 the postgres logs should show the five `CREATE DATABASE` lines and
 end with `All databases created successfully.`
+
+To remove only the postgres container and compose-managed postgres volume:
+
+```bash
+docker compose -f docker-compose.python.yml stop postgres
+docker compose -f docker-compose.python.yml rm -f postgres
+docker volume rm groupbuy-bot_postgres_data
+docker compose -f docker-compose.python.yml up --build -d
+docker logs groupbuy-postgres
+```
+
+If the compose project name differs, find the volume name with:
+
+```bash
+docker volume ls | grep postgres_data
+```
+
+## Verification commands
+
+Run these from the repository root before restarting the stack:
+
+```bash
+head -n 1 scripts/init-databases.sh infrastructure/postgres/init-databases.sh
+grep -n $'\r' scripts/init-databases.sh infrastructure/postgres/init-databases.sh || true
+sh -n scripts/init-databases.sh
+sh -n infrastructure/postgres/init-databases.sh
+git ls-files -s scripts/init-databases.sh infrastructure/postgres/init-databases.sh
+pytest tests/test_issue_139_crlf_and_exec_bits.py tests/test_issue_152_crlf_postgres_init.py -q
+```
 
 ## Prevention (already in place)
 
 - `.gitattributes` enforces `*.sh text eol=lf` so future clones — including
   on Windows with `core.autocrlf=true` — get LF endings.
+- `scripts/init-databases.sh` and `infrastructure/postgres/init-databases.sh`
+  use `#!/bin/sh`, which is available in `postgres:16-alpine`.
 - `scripts/init-databases.sh` and `infrastructure/postgres/init-databases.sh`
   both have the executable bit committed (mode `0755`).
 - Every `docker-compose*.yml` mounts the init script with `:ro` so the postgres
@@ -78,7 +115,10 @@ the script copied in:
 # infrastructure/postgres/Dockerfile
 FROM postgres:16-alpine
 COPY init-databases.sh /docker-entrypoint-initdb.d/init-databases.sh
-RUN chmod +x /docker-entrypoint-initdb.d/init-databases.sh
+RUN apk add --no-cache dos2unix \
+    && dos2unix /docker-entrypoint-initdb.d/init-databases.sh \
+    && sed -i '1s|^#!.*|#!/bin/sh|' /docker-entrypoint-initdb.d/init-databases.sh \
+    && chmod +x /docker-entrypoint-initdb.d/init-databases.sh
 ```
 
 Then in your compose file replace `image: postgres:16-alpine` with a `build:`

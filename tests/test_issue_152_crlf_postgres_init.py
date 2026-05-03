@@ -9,8 +9,10 @@ The issue reports:
 Root causes addressed by this repository:
   1. scripts/init-databases.sh must use LF (Unix) line endings, not CRLF (Windows).
   2. scripts/init-databases.sh must have the executable bit set.
-  3. docker-compose.python.yml must mount the script read-only at the correct path.
-  4. .gitattributes must enforce LF for *.sh to prevent Windows clients from
+  3. scripts/init-databases.sh must use /bin/sh because postgres:16-alpine
+     does not include bash.
+  4. docker-compose.python.yml must mount the script read-only at the correct path.
+  5. .gitattributes must enforce LF for *.sh to prevent Windows clients from
      checking out the file with CRLF endings.
 
 These tests lock in the fix so it cannot regress silently.
@@ -60,6 +62,15 @@ class TestInitScriptLineEndings:
             f"The shebang line of {INIT_SCRIPT.relative_to(REPO)} contains "
             "a carriage return (\\r). This makes the interpreter path "
             "'/bin/bash\\r' which the OS cannot find."
+        )
+
+    def test_init_script_uses_alpine_available_shell(self):
+        raw = INIT_SCRIPT.read_bytes()
+        first_line = raw.split(b"\n")[0]
+        assert first_line == b"#!/bin/sh", (
+            f"{INIT_SCRIPT.relative_to(REPO)} is mounted into postgres:16-alpine, "
+            "which includes /bin/sh but not bash. Use '#!/bin/sh' so the "
+            "PostgreSQL init script can run in the Alpine image."
         )
 
 
