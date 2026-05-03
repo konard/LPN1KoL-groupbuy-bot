@@ -14,8 +14,8 @@ version: "3.9"
 # Memory budget (≈ 3 GB host):
 #   postgres 512M | redis 256M | zookeeper 128M | kafka 512M | centrifugo 192M
 #   core 256M | backend 384M | bot 256M | websocket-server 96M
-#   frontend-react 64M | nginx 64M | certbot 32M
-#   Total ≈ 2464 MB  (fits on 3 GB)
+#   frontend-react 64M | nginx 64M | certbot 32M | django-admin 512M
+#   Total ≈ 2976 MB  (fits on 3 GB)
 ##############################################################################
 
 networks:
@@ -401,7 +401,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
       - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
       - DEBUG=False
-      - ALLOWED_HOSTS=localhost,localhost:8000,127.0.0.1,0.0.0.0,${DOMAIN:-},${EXTERNAL_IP:-},groupbuy-django-admin,groupbuy-core,gateway,nginx
+      - ALLOWED_HOSTS=localhost,localhost:8000,127.0.0.1,0.0.0.0,${DOMAIN:-},${EXTERNAL_IP:-},groupbuy-django-admin,groupbuy-core,nginx
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:8000,http://localhost:3000,http://localhost:80}
       - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-True}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://localhost:80,http://localhost}
@@ -426,50 +426,6 @@ services:
       resources:
         limits:
           memory: 512M
-
-  # ── API Gateway ────────────────────────────────────────────────────────────
-
-  gateway:
-    build:
-      context: ./services/gateway
-      dockerfile: Dockerfile
-    container_name: groupbuy-gateway
-    restart: on-failure:3
-    ports:
-      - "3000:3000"
-    environment:
-      PORT: 3000
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      BACKEND_URL: http://backend:4000
-      AUTH_SERVICE_URL: http://backend:4000
-      PURCHASE_SERVICE_URL: http://backend:4000
-      PAYMENT_SERVICE_URL: http://backend:4000
-      CHAT_SERVICE_URL: http://backend:4000
-      NOTIFICATION_SERVICE_URL: http://backend:4000
-      ANALYTICS_SERVICE_URL: http://backend:4000
-      SEARCH_SERVICE_URL: http://backend:4000
-      REPUTATION_SERVICE_URL: http://backend:4000
-      RATE_LIMIT_RPM: "60"
-      VOTING_RATE_LIMIT_RPM: "120"
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
 
   certbot:
     image: certbot/certbot:latest
