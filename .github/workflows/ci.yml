@@ -30,6 +30,51 @@ jobs:
       - name: Run Ruff formatter check
         run: ruff format --check bot/ adapters/
 
+  # Run docker-compose / shell-script regression tests
+  # These tests guard against the issue #150 / #147 / #145 / #143 / #139 / #137
+  # failure mode: init-databases.sh failing with "/bin/bash^M: bad interpreter"
+  # or postgres being marked unhealthy before first-boot init completes.
+  compose-regression-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pyyaml
+
+      - name: Guard against CRLF line endings in shell scripts
+        # Independent fast check that fails the job before pytest if any *.sh
+        # file has CRLF — this is exactly the failure shown in issue #150 logs
+        # ("/bin/bash^M: bad interpreter: No such file or directory").
+        run: |
+          set -e
+          bad=$(find . -type f -name '*.sh' \
+            -not -path './.git/*' -not -path './node_modules/*' \
+            -exec grep -l $'\r' {} + || true)
+          if [ -n "$bad" ]; then
+            echo "ERROR: shell scripts with CRLF line endings detected:"
+            echo "$bad"
+            echo "Fix with: sed -i 's/\r$//' <file>  (or dos2unix <file>)"
+            exit 1
+          fi
+
+      - name: Run compose / shell-script regression tests
+        run: |
+          pytest -v \
+            tests/test_issue_137_python_compose_fixes.py \
+            tests/test_issue_139_crlf_and_exec_bits.py \
+            tests/test_issue_143_compose_postgres_healthcheck.py \
+            tests/test_issue_145_compose_default_postgres_ro.py \
+            tests/test_issue_147_compose_postgres_healthcheck.py \
+            tests/test_issue_150_python_compose_robustness.py
+
   # Build and test Rust backend
   rust-build:
     runs-on: ubuntu-latest
@@ -170,6 +215,17 @@ jobs:
 
       - name: Validate docker-compose.monolith.yml
         run: docker compose -f docker-compose.monolith.yml config --quiet
+
+      - name: Validate docker-compose.python.yml
+        # File named in issue #150 logs — without this step, regressions in the
+        # init-databases.sh mount or postgres healthcheck would not be caught.
+        run: docker compose -f docker-compose.python.yml config --quiet
+
+      - name: Validate docker-compose.4services.yml
+        run: docker compose -f docker-compose.4services.yml config --quiet
+
+      - name: Validate docker-compose.single.yml
+        run: docker compose -f docker-compose.single.yml config --quiet
 
   # Build microservices Docker images
   microservices-build:
