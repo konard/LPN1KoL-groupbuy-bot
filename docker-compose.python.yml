@@ -44,7 +44,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - groupbuy-network
     command: >
@@ -87,7 +87,8 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      # CMD-SHELL is required so the shell expands ${REDIS_PASSWORD:-redis_secret}
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-redis_secret}\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -163,7 +164,7 @@ services:
     environment:
       CENTRIFUGO_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
     volumes:
-      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json
+      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json:ro
     ports:
       - "8001:8000"
     networks:
@@ -329,6 +330,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -360,7 +367,7 @@ services:
       - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
     depends_on:
       bot:
-        condition: service_started
+        condition: service_healthy
     networks:
       - groupbuy-network
     deploy:
@@ -385,7 +392,7 @@ services:
       - "8002:8002"
     depends_on:
       bot:
-        condition: service_started
+        condition: service_healthy
     networks:
       - groupbuy-network
     deploy:
@@ -429,7 +436,8 @@ services:
     container_name: groupbuy-frontend
     restart: on-failure:3
     depends_on:
-      - core
+      core:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -447,7 +455,8 @@ services:
     image: nginx:alpine
     container_name: groupbuy-nginx
     restart: on-failure:3
-    entrypoint: ["/docker-entrypoint-custom.sh"]
+    # Use /bin/sh to invoke the entrypoint so no executable bit is needed on the host file
+    entrypoint: ["/bin/sh", "/docker-entrypoint-custom.sh"]
     ports:
       - "80:80"
       - "443:443"
@@ -468,6 +477,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
       - groupbuy-network
     deploy:
@@ -478,7 +489,8 @@ services:
   certbot:
     image: certbot/certbot:latest
     container_name: groupbuy-certbot
-    restart: on-failure:3
+    # unless-stopped so the renewal loop keeps running after transient failures
+    restart: unless-stopped
     volumes:
       - letsencrypt_data:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
