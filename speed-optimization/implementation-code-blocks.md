@@ -115,6 +115,9 @@ final class CookieConsentManager
             if ($consent) {
                 return ['status' => $consent->status, 'identifier' => $consent->identifier];
             }
+
+            // Cookie есть, но запись в БД не найдена (очищена или невалидна).
+            // Считаем решение устаревшим и возвращаем Pending без записи в БД.
         }
 
         return [
@@ -125,7 +128,8 @@ final class CookieConsentManager
 
     public function rememberPendingCookie(string $identifier): \Symfony\Component\HttpFoundation\Cookie
     {
-        return Cookie::make(self::PENDING_COOKIE, $identifier, minutes: 60 * 24 * 30, secure: true, httpOnly: true, sameSite: 'lax');
+        // TTL 7 дней совпадает с --pending-days в PruneCookieConsents, чтобы не хранить cookie дольше, чем запись в БД
+        return Cookie::make(self::PENDING_COOKIE, $identifier, minutes: 60 * 24 * 7, secure: true, httpOnly: true, sameSite: 'lax');
     }
 
     public function accept(Request $request): CookieConsent
@@ -166,7 +170,7 @@ public function accept(Request $request, CookieConsentManager $manager): JsonRes
 
     return response()
         ->json(['status' => $consent->status])
-        ->withCookie(cookie()->forget('cookie_consent_pending_id'))
+        ->withoutCookie('cookie_consent_pending_id')
         ->withCookie(cookie('cookie_consent_id', $consent->identifier, 60 * 24 * 365, secure: true, httpOnly: true, sameSite: 'lax'));
 }
 
@@ -176,7 +180,7 @@ public function reject(Request $request, CookieConsentManager $manager): JsonRes
 
     return response()
         ->json(['status' => $consent->status])
-        ->withCookie(cookie()->forget('cookie_consent_pending_id'))
+        ->withoutCookie('cookie_consent_pending_id')
         ->withCookie(cookie('cookie_consent_id', $consent->identifier, 60 * 24 * 365, secure: true, httpOnly: true, sameSite: 'lax'));
 }
 ```
@@ -251,7 +255,26 @@ ALTER TABLE sales
     ADD INDEX idx_sales_uuid_contractor_id (uuid_contractor, id);
 ```
 
-Перед добавлением на production сначала проверить план:
+Перед добавлением на production сначала проверить план без ANALYZE (ANALYZE выполняет запрос и создает нагрузку на таблицы с миллионами строк):
+
+```sql
+EXPLAIN
+SELECT id, name, price
+FROM items
+WHERE category_id_1c = 'CAT-001'
+  AND in_archive = 0
+  AND type = 'item'
+ORDER BY name
+LIMIT 40;
+
+EXPLAIN
+SELECT id, name
+FROM items
+WHERE MATCH(name, synonyms) AGAINST('+масло*' IN BOOLEAN MODE)
+LIMIT 10;
+```
+
+После добавления индексов на staging можно использовать `EXPLAIN ANALYZE` для точных измерений:
 
 ```sql
 EXPLAIN ANALYZE
@@ -262,12 +285,6 @@ WHERE category_id_1c = 'CAT-001'
   AND type = 'item'
 ORDER BY name
 LIMIT 40;
-
-EXPLAIN ANALYZE
-SELECT id, name
-FROM items
-WHERE MATCH(name, synonyms) AGAINST('+масло*' IN BOOLEAN MODE)
-LIMIT 10;
 ```
 
 ## 4. Каталог: list-view отдельно от detail-view
@@ -385,6 +402,11 @@ public function __invoke(Request $request): JsonResponse
 Где: `app/Http/Controllers/HomeController.php`.
 
 ```php
+$booleanTerm = collect(preg_split('/\s+/u', $term))
+    ->filter()
+    ->map(fn (string $word) => '+' . $word . '*')
+    ->implode(' ');
+
 $baseQuery = Item::query()
     ->where('type', 'item')
     ->where(function ($query) use ($booleanTerm, $term) {
@@ -433,29 +455,55 @@ public function requestYmlExport(Request $request): JsonResponse
 ### 6.2. Job с chunkById
 
 ```php
-public function handle(): void
+<?php
+
+namespace App\Jobs;
+
+use App\Models\Item;
+use App\Models\PriceExport;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Storage;
+
+final class BuildPriceExport implements ShouldQueue
 {
-    $export = PriceExport::query()->findOrFail($this->exportId);
-    $path = "exports/price-{$export->id}.yml";
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    Storage::put($path, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<yml_catalog>\n<shop>\n<offers>\n");
+    public function __construct(private int $exportId) {}
 
-    Item::query()
-        ->select(['id', 'name', 'slug', 'brand_id', 'category_id_1c', 'in_archive'])
-        ->where('type', 'item')
-        ->where(function ($query) {
-            $query->where('in_archive', false)
-                ->orWhere(fn ($nested) => $nested->where('in_archive', true)->where('export_archived', true));
-        })
-        ->with(['brand:id,name', 'activePrice:id,item_id,price', 'category:id,id_1c,name'])
-        ->chunkById(500, function ($items) use ($path) {
-            $chunk = $items->map(fn (Item $item) => $this->renderOffer($item))->implode("\n");
-            Storage::append($path, $chunk);
-        });
+    public function handle(): void
+    {
+        $export = PriceExport::query()->findOrFail($this->exportId);
+        $path = "exports/price-{$export->id}.yml";
 
-    Storage::append($path, "\n</offers>\n</shop>\n</yml_catalog>\n");
+        Storage::put($path, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<yml_catalog>\n<shop>\n<offers>\n");
 
-    $export->update(['status' => 'ready', 'path' => $path, 'finished_at' => now()]);
+        Item::query()
+            ->select(['id', 'name', 'slug', 'brand_id', 'category_id_1c', 'in_archive'])
+            ->where('type', 'item')
+            ->where(function ($query) {
+                $query->where('in_archive', false)
+                    ->orWhere(fn ($nested) => $nested->where('in_archive', true)->where('export_archived', true));
+            })
+            ->with(['brand:id,name', 'activePrice:id,item_id,price', 'category:id,id_1c,name'])
+            ->chunkById(500, function ($items) use ($path) {
+                $chunk = $items->map(fn (Item $item) => $this->renderOffer($item))->implode("\n");
+                Storage::append($path, $chunk);
+            });
+
+        Storage::append($path, "\n</offers>\n</shop>\n</yml_catalog>\n");
+
+        $export->update(['status' => 'ready', 'path' => $path, 'finished_at' => now()]);
+    }
+
+    private function renderOffer(Item $item): string
+    {
+        // Реализовать в соответствии со схемой YML и текущим Blade-шаблоном
+        return "<offer id=\"{$item->id}\"><name>{$item->name}</name></offer>";
+    }
 }
 ```
 
@@ -632,13 +680,11 @@ curl -H 'Accept-Encoding: br' -I https://example.com/
 <picture>
     <source
         type="image/avif"
-        srcset="{{ image_url($item->firstImage, 320, 'avif') }} 320w,
-                {{ image_url($item->firstImage, 640, 'avif') }} 640w"
+        srcset="{{ image_url($item->firstImage, 320, 'avif') }} 320w, {{ image_url($item->firstImage, 640, 'avif') }} 640w"
     >
     <source
         type="image/webp"
-        srcset="{{ image_url($item->firstImage, 320, 'webp') }} 320w,
-                {{ image_url($item->firstImage, 640, 'webp') }} 640w"
+        srcset="{{ image_url($item->firstImage, 320, 'webp') }} 320w, {{ image_url($item->firstImage, 640, 'webp') }} 640w"
     >
     <img
         src="{{ image_url($item->firstImage, 320, 'jpg') }}"
@@ -688,7 +734,7 @@ curl -H 'Accept-Encoding: br' -I https://example.com/
 
 Где: `app/Repositories/ItemCardRepository.php`, invalidation после обмена с 1C.
 
-Цель: не пересобирать цены, остатки, скидки и изображения на каждый запрос каталога.
+Цель: не пересобирать цены, остатки, скидки и изображения на каждый запрос каталога. Требует Redis в качестве cache driver (поддерживает теги).
 
 ```php
 final class ItemCardRepository
