@@ -427,46 +427,6 @@ services:
         limits:
           memory: 512M
 
-  # ── API Gateway ───────────────────────────────────────────────────────────
-  # Go-based rate-limiting / routing gateway; in this monolith all service
-  # URLs point to core:8000 (FastAPI handles /api/* directly).
-
-  gateway:
-    build:
-      context: ./services/gateway
-      dockerfile: Dockerfile
-    container_name: groupbuy-gateway
-    restart: on-failure:3
-    ports:
-      - "3001:3000"
-    environment:
-      PORT: 3000
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      AUTH_SERVICE_URL: http://core:8000
-      PURCHASE_SERVICE_URL: http://core:8000
-      PAYMENT_SERVICE_URL: http://core:8000
-      CHAT_SERVICE_URL: http://core:8000
-      SEARCH_SERVICE_URL: http://core:8000
-      REPUTATION_SERVICE_URL: http://core:8000
-      ANALYTICS_SERVICE_URL: http://core:8000
-      NOTIFICATION_SERVICE_URL: http://core:8000
-      REDIS_ADDR: redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
-      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-60}
-      VOTING_RATE_LIMIT_RPM: ${VOTING_RATE_LIMIT_RPM:-120}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-    depends_on:
-      redis:
-        condition: service_healthy
-      core:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-
   certbot:
     image: certbot/certbot:latest
     container_name: groupbuy-certbot
