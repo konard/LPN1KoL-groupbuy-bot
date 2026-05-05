@@ -1,13 +1,12 @@
-FROM golang:1.22-alpine AS builder
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o chat-service .
+FROM python:3.11-slim
 
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=builder /app/chat-service .
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
 EXPOSE 4004
-ENTRYPOINT ["./chat-service"]
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4004"]

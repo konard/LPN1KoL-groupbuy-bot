@@ -1,8 +1,12 @@
-FROM node:20-alpine
+FROM python:3.11-slim
+
 WORKDIR /app
-ENV NODE_ENV=production
-COPY package*.json ./
-RUN npm ci --omit=dev
-COPY src ./src
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
 EXPOSE 4005
-CMD ["node", "src/index.js"]
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4005"]
