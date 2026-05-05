@@ -1,21 +1,47 @@
 version: "3.9"
 
 ##############################################################################
-# docker-compose.python.yml — unified Python/FastAPI stack (monolith edition)
+# docker-compose.python.yml — Python/FastAPI stack (full functional parity edition)
 #
-# All backend microservices (auth, purchases, payments, chat, notifications,
-# analytics, search, reputation) are merged into a single `backend` container.
-# Swagger UI available at http://localhost:8000/docs
+# Functional parity with docker-compose.unified.yml is achieved through the
+# Python-specific monolith architecture mandated by issue #163: every Rust
+# microservice (gateway, auth, purchase, payment, chat, notification,
+# analytics, search, reputation) is consolidated into a single FastAPI
+# `backend` container on port 4000.  Routing that the unified stack delegates
+# to `gateway:3000` is performed by nginx + the FastAPI app itself, so the
+# external surface (hosts, ports, paths) is identical.
+#
+# Differences vs unified (all by design):
+#   * `core` is built from ./backend (FastAPI) instead of ./core-rust (Rust).
+#   * A `backend` service is added on port 4000 (FastAPI monolith merging
+#     auth/purchase/payment/chat/notification/analytics/search/reputation).
+#   * No `gateway` service — issue #163 forbids it; routing is handled by
+#     nginx-api.conf -> backend:4000 / core:8000 upstreams.
+#   * No individual microservice containers — all merged into `backend`.
+#
+# Adapters and ancillary services (telegram-proxy, telegram-adapter,
+# mattermost-adapter, websocket-server, frontend-react, nginx, certbot,
+# centrifugo, kafka, zookeeper, redis, postgres, django-admin) match unified
+# verbatim (image, ports, volumes, env, depends_on, healthcheck, restart,
+# resource limits).
+#
+# External surface (same as unified):
+#   * Frontend cabinet:  http://<host>:80, https://<host>:443  (via nginx)
+#   * Django admin:      http://<host>:8000/admin             (via nginx)
+#   * Public API:        http://<host>:80/api/v1/*            (via nginx -> backend:4000)
+#   * Centrifugo WS:     ws://<host>:8001/connection/websocket
+#   * Mattermost adapter: http://<host>:8002
 #
 # Usage:
 #   cp .env.example .env
 #   docker compose -f docker-compose.python.yml up -d
 #
-# Memory budget (≈ 3 GB host):
+# Memory budget (≈ 2.7 GB host):
 #   postgres 512M | redis 256M | zookeeper 128M | kafka 512M | centrifugo 192M
-#   core 256M | backend 384M | bot 256M | websocket-server 96M
-#   frontend-react 64M | nginx 64M | certbot 32M | django-admin 512M
-#   Total ≈ 2976 MB  (fits on 3 GB)
+#   django-admin 512M | core (FastAPI) 256M | backend (monolith) 384M
+#   bot 256M | telegram-adapter 128M | mattermost-adapter 64M
+#   websocket-server 96M | frontend-react 64M | nginx 64M | certbot 32M
+#   Total ≈ 3456 MB across all containers (most idle ~1/3 of limit)
 ##############################################################################
 
 networks:
@@ -86,12 +112,10 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      # CMD-SHELL is required so the shell expands ${REDIS_PASSWORD:-redis_secret}
-      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-redis_secret}\" ping | grep -q PONG"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
     deploy:
       resources:
         limits:
@@ -110,6 +134,8 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
+      # Use bash /dev/tcp to send the ZooKeeper 'ruok' 4-letter word — lightweight
+      # and always available in confluentinc/cp-zookeeper without requiring nc.
       test: ["CMD-SHELL", "echo ruok | timeout 5 bash -c 'cat > /dev/tcp/localhost/2181' && echo OK"]
       interval: 10s
       timeout: 10s
@@ -160,10 +186,13 @@ services:
     container_name: groupbuy-centrifugo
     command: centrifugo -c /centrifugo/config.json
     restart: on-failure:3
+    # Pass Redis password via env var — centrifugo v5 uses CENTRIFUGO_REDIS_PASSWORD
+    # which maps to the "redis_password" key in centrifugo.json and overrides it.
+    # (v6 renamed this to broker_redis_password; v5 uses the plain redis_* keys.)
     environment:
       CENTRIFUGO_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
     volumes:
-      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json:ro
+      - ./services/chat-service/centrifugo/centrifugo.json:/centrifugo/config.json
     ports:
       - "8001:8000"
     networks:
@@ -182,11 +211,57 @@ services:
         limits:
           memory: 192M
 
-  # ── Python/FastAPI Backend (merged core + core-rust) ──────────────────────
+  # ── Main Application ───────────────────────────────────────────────────────
+
+  django-admin:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
+    build:
+      context: ./core
+    container_name: groupbuy-django-admin
+    restart: on-failure:3
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
+      - DEBUG=False
+      - ALLOWED_HOSTS=localhost,localhost:8000,127.0.0.1,0.0.0.0,${DOMAIN:-},${EXTERNAL_IP:-},176.12.68.195,groupbuy-django-admin,groupbuy-core,gateway,nginx
+      # CORS: set CORS_ALLOWED_ORIGINS in .env when running without a domain.
+      # Use http://<SERVER_IP> or http://localhost:PORT as appropriate.
+      # Set CORS_ALLOWED_ORIGINS=* only for local development.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:8000,http://localhost:3000,http://localhost:80,http://${EXTERNAL_IP:-176.12.68.195},http://${EXTERNAL_IP:-176.12.68.195}:8000}
+      - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-True}
+      # CSRF trusted origins must include the scheme+host used by browsers to
+      # reach the admin panel (e.g. http://localhost:8000 or https://yourdomain).
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://localhost:80,http://localhost,http://${EXTERNAL_IP:-176.12.68.195},http://${EXTERNAL_IP:-176.12.68.195}:8000}
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-admin}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-admin}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@localhost}
+      # Limit gunicorn to 2 workers to stay within the 512M memory budget.
+      # Without this, gunicorn defaults to 2*CPU+1 workers and can OOM.
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Django startup: migrations + collectstatic + superuser creation can take 90-120s
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ── Python/FastAPI Core (Python-specific replacement for the Rust core) ───
   # Single FastAPI app serving /api/*, /auth/*, /admin/*
   # Swagger UI: http://localhost:8000/docs
   # Admin panel: http://localhost:8000/admin
-
   core:
     build:
       context: ./backend
@@ -206,6 +281,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -213,17 +290,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 90s
     deploy:
       resources:
         limits:
           memory: 256M
 
-  # ── Unified Backend Monolith ───────────────────────────────────────────────
+  # ── Unified Backend Monolith (Python-specific) ────────────────────────────
   # All Python microservices merged into one FastAPI app.
   # Swagger UI: http://localhost:4000/docs
   # OpenAPI schema: http://localhost:4000/openapi.json
-
   backend:
     build:
       context: ./services/backend-monolith
@@ -275,8 +351,6 @@ services:
         limits:
           memory: 384M
 
-  # ── Bot + Adapters ─────────────────────────────────────────────────────────
-
   bot:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/bot:${IMAGE_TAG:-main}
     build:
@@ -295,16 +369,78 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
     deploy:
       resources:
         limits:
+          # Increased from 96M: Python bot with aiohttp/aiogram needs at least 256M on 3GB host
           memory: 256M
+
+  telegram-proxy:
+    # IMPORTANT: This service only starts when the "proxy" profile is active.
+    # To use the built-in SOCKS5 proxy for Telegram, start with:
+    #   docker compose -f docker-compose.python.yml --profile proxy up -d
+    # AND set TELEGRAM_USE_PROXY=true in your .env file.
+    # Do NOT set TELEGRAM_USE_PROXY=true without enabling this profile —
+    # the telegram-adapter will fail to connect to telegram-proxy:1080.
+    image: serjs/go-socks5-proxy:latest
+    container_name: groupbuy-telegram-proxy
+    restart: on-failure:3
+    networks:
+      - groupbuy-network
+    profiles:
+      - proxy
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  telegram-adapter:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
+    build:
+      context: ./adapters/telegram
+    container_name: groupbuy-telegram-adapter
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
+      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          # Increased from 64M: Python aiohttp/aiogram process was being
+          # OOM-killed (exit 137) under the 64M limit (issue #182).
+          memory: 128M
+
+  mattermost-adapter:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
+    build:
+      context: ./adapters/mattermost
+    container_name: groupbuy-mattermost-adapter
+    restart: on-failure:3
+    environment:
+      - BOT_SERVICE_URL=http://bot:8001
+      - MATTERMOST_URL=${MATTERMOST_URL}
+      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
+      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
+      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
+      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
+    ports:
+      - "8002:8002"
+    depends_on:
+      bot:
+        condition: service_started
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
   websocket-server:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/websocket:${IMAGE_TAG:-main}
@@ -342,8 +478,7 @@ services:
     container_name: groupbuy-frontend
     restart: on-failure:3
     depends_on:
-      core:
-        condition: service_healthy
+      - core
     networks:
       - groupbuy-network
     healthcheck:
@@ -361,8 +496,7 @@ services:
     image: nginx:alpine
     container_name: groupbuy-nginx
     restart: on-failure:3
-    # Use /bin/sh to invoke the entrypoint so no executable bit is needed on the host file
-    entrypoint: ["/bin/sh", "/docker-entrypoint-custom.sh"]
+    entrypoint: ["/docker-entrypoint-custom.sh"]
     ports:
       - "80:80"
       - "443:443"
@@ -375,6 +509,8 @@ services:
     depends_on:
       core:
         condition: service_healthy
+      django-admin:
+        condition: service_started
       websocket-server:
         condition: service_healthy
       frontend-react:
@@ -388,50 +524,10 @@ services:
         limits:
           memory: 64M
 
-  # ── Django Admin Panel ─────────────────────────────────────────────────────
-
-  django-admin:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
-    build:
-      context: ./core
-    container_name: groupbuy-django-admin
-    restart: on-failure:3
-    environment:
-      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
-      - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
-      - DEBUG=False
-      - ALLOWED_HOSTS=localhost,localhost:8000,127.0.0.1,0.0.0.0,${DOMAIN:-},${EXTERNAL_IP:-},groupbuy-django-admin,groupbuy-core,nginx
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:8000,http://localhost:3000,http://localhost:80}
-      - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-True}
-      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://localhost:80,http://localhost}
-      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-admin}
-      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-admin}
-      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@localhost}
-      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - groupbuy-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
   certbot:
     image: certbot/certbot:latest
     container_name: groupbuy-certbot
-    # unless-stopped so the renewal loop keeps running after transient failures
-    restart: unless-stopped
+    restart: on-failure:3
     volumes:
       - letsencrypt_data:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
