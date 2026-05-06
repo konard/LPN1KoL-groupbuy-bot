@@ -223,6 +223,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -253,6 +255,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - groupbuy-network
@@ -321,6 +325,9 @@ services:
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      kafka:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -348,6 +355,9 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minio_password}
       S3_BUCKET: ${S3_BUCKET:-analytics-reports}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      kafka:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -376,6 +386,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -402,6 +414,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - groupbuy-network
@@ -435,6 +449,61 @@ services:
       resources:
         limits:
           memory: 64M
+
+  # ZooKeeper — required by Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    restart: on-failure:3
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: "-Xmx64m -Xms64m"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | timeout 5 bash -c 'cat > /dev/tcp/localhost/2181' && echo OK"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # Kafka message broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    restart: on-failure:3
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
 
   # PostgreSQL database
   postgres:
@@ -491,6 +560,8 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  kafka_data:
+  zookeeper_data:
   wasm_pkg:
 
 networks:
