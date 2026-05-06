@@ -162,11 +162,12 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      # python:3.11-slim does not ship curl, so use the stdlib urllib instead.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -198,7 +199,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4001/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -228,7 +229,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4002/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -261,7 +262,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4003/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4003/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -292,7 +293,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4004/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4004/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -331,7 +332,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4005/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4005/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -361,7 +362,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4006/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4006/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -391,7 +392,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4007/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4007/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -420,7 +421,7 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4008/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4008/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 5
