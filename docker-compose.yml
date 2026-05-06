@@ -1,15 +1,20 @@
 version: '3.9'
 
 services:
-  # Core API (Rust backend)
+  # Core API (FastAPI rewrite of core-rust)
+  # Serves /api/users, /api/procurements, /api/payments, /api/chat on port 8000.
+  # The frontend-react and bot connect to core:8000, NOT to gateway.
+  # Gateway (port 3000) routes requests to the 8 microservices (auth, purchase, …).
   core:
-    build: ./core-rust
+    build: ./core-fastapi
     restart: on-failure:3
     environment:
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
       - PORT=8000
-      - RUST_LOG=info,groupbuy_api=debug
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
     depends_on:
       postgres:
         condition: service_healthy
@@ -24,11 +29,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 90s
+      start_period: 30s
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
 
   # Bot service (command handlers)
   bot:
@@ -67,26 +72,6 @@ services:
     profiles:
       - proxy
 
-  # Telegram adapter
-  telegram-adapter:
-    build: ./adapters/telegram
-    command: python adapter.py
-    restart: on-failure:3
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
-      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
-      - TELEGRAM_USE_PROXY=${TELEGRAM_USE_PROXY:-false}
-    depends_on:
-      bot:
-        condition: service_started
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-
   # VK adapter
   vk-adapter:
     build: ./adapters/vk
@@ -95,30 +80,6 @@ services:
     environment:
       - BOT_SERVICE_URL=http://bot:8001
       - VK_TOKEN=${VK_TOKEN}
-    depends_on:
-      bot:
-        condition: service_started
-    networks:
-      - groupbuy-network
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-
-  # Mattermost adapter
-  mattermost-adapter:
-    build: ./adapters/mattermost
-    command: python adapter.py
-    restart: on-failure:3
-    environment:
-      - BOT_SERVICE_URL=http://bot:8001
-      - MATTERMOST_URL=${MATTERMOST_URL}
-      - MATTERMOST_TOKEN=${MATTERMOST_TOKEN}
-      - MATTERMOST_WEBHOOK_URL=${MATTERMOST_WEBHOOK_URL}
-      - MATTERMOST_ADAPTER_URL=${MATTERMOST_ADAPTER_URL:-http://mattermost-adapter:8002}
-      - MATTERMOST_BOT_TOKEN=${MATTERMOST_BOT_TOKEN:-}
-    ports:
-      - "8002:8002"
     depends_on:
       bot:
         condition: service_started
@@ -167,7 +128,9 @@ services:
         limits:
           memory: 96M
 
-  # Microservices API gateway — routes /api/v1/* to auth and other services
+  # Microservices API gateway — routes /api/v1/* to the 8 microservices.
+  # Frontend should send requests to gateway (port 3000) for microservice API,
+  # and to core (port 8000) for legacy /api/* endpoints.
   gateway:
     build:
       context: ./services/gateway
@@ -175,6 +138,7 @@ services:
     environment:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
+      JWT_ALGORITHM: HS256
       AUTH_SERVICE_URL: http://auth-service:4001
       PURCHASE_SERVICE_URL: http://purchase-service:4002
       PAYMENT_SERVICE_URL: http://payment-service:4003
@@ -183,21 +147,32 @@ services:
       ANALYTICS_SERVICE_URL: http://analytics-service:4006
       SEARCH_SERVICE_URL: http://search-service:4007
       REPUTATION_SERVICE_URL: http://reputation-service:4008
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
       RATE_LIMIT_RPM: "60"
+      VOTING_RATE_LIMIT_RPM: "120"
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
         condition: service_healthy
+    ports:
+      - "3001:3000"
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:
-          memory: 32M
+          memory: 128M
 
-  # Auth microservice — handles JWT login/registration/OTP via /api/v1/auth/*
+  # Auth microservice — handles JWT login/registration/OTP via /auth/*
   auth-service:
     build:
       context: ./services/auth-service
@@ -208,25 +183,242 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-jwt-refresh-secret}
-      JWT_EXPIRES_IN: 15m
-      JWT_REFRESH_EXPIRES_IN: 7d
-      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:4005}
+      JWT_EXPIRES_IN_SECONDS: "900"
+      JWT_REFRESH_EXPIRES_IN_SECONDS: "604800"
+      BCRYPT_ROUNDS: "10"
+      NOTIFICATION_SERVICE_URL: http://notification-service:4005
       CORE_API_URL: http://core:8000
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      core:
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # Purchase microservice — group buys with voting
+  purchase-service:
+    build:
+      context: ./services/purchase-service
+    restart: on-failure:3
+    environment:
+      PORT: 4002
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/purchase_db
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      KAFKA_CLIENT_ID: purchase-service
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # Payment microservice — wallets, escrow, transactions
+  payment-service:
+    build:
+      context: ./services/payment-service
+    restart: on-failure:3
+    environment:
+      PORT: 4003
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/payment_db
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Chat microservice — rooms, messages, Centrifugo integration
+  chat-service:
+    build:
+      context: ./services/chat-service
+    restart: on-failure:3
+    environment:
+      PORT: 4004
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/chat_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      CENTRIFUGO_URL: ${CENTRIFUGO_URL:-http://centrifugo:8000}
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Notification microservice — Kafka consumer, email/Telegram/WhatsApp/push
+  notification-service:
+    build:
+      context: ./services/notification-service
+    restart: on-failure:3
+    environment:
+      PORT: 4005
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      KAFKA_GROUP_ID: notification-group
+      CENTRIFUGO_URL: ${CENTRIFUGO_URL:-http://centrifugo:8000}
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-centrifugo_api_key}
+      SMTP_HOST: ${SMTP_HOST:-smtp.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Groupbuy <notifications@example.com>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_URL: ${TELEGRAM_API_URL:-https://api.telegram.org}
+      WHATSAPP_API_URL: ${WHATSAPP_API_URL:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Analytics microservice — Kafka consumer, XLSX/CSV reports to S3
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+    restart: on-failure:3
+    environment:
+      PORT: 4006
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      KAFKA_GROUP_ID: analytics-group
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio_admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio_password}
+      S3_BUCKET: ${S3_BUCKET:-analytics-reports}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Search microservice — Elasticsearch + Redis cache
+  search-service:
+    build:
+      context: ./services/search-service
+    restart: on-failure:3
+    environment:
+      PORT: 4007
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Reputation microservice — reviews, complaints, auto-block
+  reputation-service:
+    build:
+      context: ./services/reputation-service
+    restart: on-failure:3
+    environment:
+      PORT: 4008
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/reputation_db
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
           memory: 96M
 
   # React frontend (with WASM integration)
+  # Connects to core:8000 for /api/* legacy endpoints.
+  # For microservice API, the frontend should use gateway (port 3001 on host, 3000 inside Docker).
   frontend-react:
     build: ./frontend-react
     restart: on-failure:3
@@ -243,8 +435,6 @@ services:
           memory: 64M
 
   # PostgreSQL database
-  # NOTE: POSTGRES_PASSWORD is only used on first volume creation.
-  # To reset: docker compose down -v && docker compose up -d
   postgres:
     image: postgres:16-alpine
     restart: on-failure:3
