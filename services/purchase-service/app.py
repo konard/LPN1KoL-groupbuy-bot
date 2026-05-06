@@ -27,8 +27,14 @@ _producer: AIOKafkaProducer | None = None
 MIGRATIONS = """
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TYPE IF NOT EXISTS purchase_status AS ENUM ('draft','open','voting','closed','cancelled');
-CREATE TYPE IF NOT EXISTS vote_status AS ENUM ('active','closed','tie');
+DO $$ BEGIN
+    CREATE TYPE purchase_status AS ENUM ('draft','open','voting','closed','cancelled');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE TYPE vote_status AS ENUM ('active','closed','tie');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS purchases (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
