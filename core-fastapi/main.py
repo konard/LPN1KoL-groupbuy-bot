@@ -17,7 +17,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import connect, disconnect, init_schema
-from app.routers import users, procurements, payments, chat
+from app.routers import (
+    users,
+    procurements,
+    payments,
+    chat,
+    requests as buyer_requests,
+    news,
+    polls,
+    suppliers,
+    invitations,
+)
 from app.schemas import HealthResponse
 
 logging.basicConfig(
@@ -68,6 +78,11 @@ app.include_router(users.router, prefix="/api")
 app.include_router(procurements.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(buyer_requests.router, prefix="/api")
+app.include_router(news.router, prefix="/api")
+app.include_router(polls.router, prefix="/api")
+app.include_router(suppliers.router, prefix="/api")
+app.include_router(invitations.router, prefix="/api")
 
 
 if __name__ == "__main__":

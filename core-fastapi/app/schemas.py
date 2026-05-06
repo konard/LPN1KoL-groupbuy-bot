@@ -162,3 +162,112 @@ class CreateMessage(BaseModel):
     text: str
     message_type: str | None = "text"
     attachment_url: str | None = ""
+
+
+# ─── Buyer request schemas ────────────────────────────────────────────────────
+
+class CreateBuyerRequest(BaseModel):
+    user_id: UUID
+    product_name: str
+    quantity: Decimal | None = Decimal("1")
+    unit: str | None = "units"
+    city: str | None = ""
+    notes: str | None = ""
+
+
+class UpdateBuyerRequest(BaseModel):
+    product_name: str | None = None
+    quantity: Decimal | None = None
+    unit: str | None = None
+    city: str | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+
+
+# ─── News schemas ─────────────────────────────────────────────────────────────
+
+class CreateNewsPost(BaseModel):
+    author_id: UUID
+    title: str
+    content: str = ""
+
+
+class UpdateNewsPost(BaseModel):
+    title: str | None = None
+    content: str | None = None
+
+
+# ─── Poll schemas ─────────────────────────────────────────────────────────────
+
+class CreatePoll(BaseModel):
+    author_id: UUID
+    procurement_id: int | None = None
+    question: str
+    options: list[str]
+    poll_type: str | None = "general"
+
+
+class CastVote(BaseModel):
+    user_id: UUID
+    option_id: int
+
+
+# ─── Supplier company schemas ─────────────────────────────────────────────────
+
+class UpsertSupplierCompany(BaseModel):
+    user_id: UUID
+    name: str
+    legal_address: str = ""
+    postal_address: str = ""
+    actual_address: str = ""
+    okved: str = ""
+    ogrn: str = ""
+    inn: str = ""
+    contact_phone: str = ""
+    email: str = ""
+    is_published: bool = True
+
+
+class UpsertPriceList(BaseModel):
+    supplier_id: UUID
+    file_url: str = ""
+    popular_items: list[dict] | None = None
+    is_published: bool = True
+
+
+# ─── Invitation schemas ───────────────────────────────────────────────────────
+
+class CreateInvitation(BaseModel):
+    organizer_id: UUID
+    invitee_id: UUID | None = None
+    invitee_email: str = ""
+    invitee_role: str = "supplier"
+    procurement_id: int | None = None
+    message: str = ""
+
+
+class UpdateInvitationStatus(BaseModel):
+    status: str  # one of: accepted, declined, cancelled
+
+
+# ─── Closing document schemas ─────────────────────────────────────────────────
+
+class CreateClosingDocument(BaseModel):
+    procurement_id: int
+    supplier_id: UUID
+    file_url: str = ""
+    comment: str = ""
+
+
+# ─── Withdrawal schemas ───────────────────────────────────────────────────────
+
+class CreateWithdrawal(BaseModel):
+    user_id: UUID
+    amount: Decimal
+    bank_details: str = ""
+
+
+# ─── Procurement lifecycle schemas ────────────────────────────────────────────
+
+class ApproveSupplier(BaseModel):
+    supplier_id: UUID

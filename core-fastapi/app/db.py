@@ -165,6 +165,129 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS idx_procurements_organizer ON procurements(organizer_id);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_procurement ON chat_messages(procurement_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+
+    -- Buyer requests (issue #194: form 1.1 "Создать запрос")
+    CREATE TABLE IF NOT EXISTS buyer_requests (
+        id           SERIAL PRIMARY KEY,
+        user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_name VARCHAR(200) NOT NULL,
+        quantity     NUMERIC(10, 2) NOT NULL DEFAULT 1,
+        unit         VARCHAR(20) NOT NULL DEFAULT 'units',
+        city         VARCHAR(100) NOT NULL DEFAULT '',
+        notes        TEXT NOT NULL DEFAULT '',
+        is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_buyer_requests_user ON buyer_requests(user_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_buyer_requests_product ON buyer_requests(LOWER(product_name));
+
+    -- News feed (issue #194: published by organizers/suppliers)
+    CREATE TABLE IF NOT EXISTS news_posts (
+        id          SERIAL PRIMARY KEY,
+        author_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title       VARCHAR(200) NOT NULL,
+        content     TEXT NOT NULL DEFAULT '',
+        is_deleted  BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_news_author ON news_posts(author_id);
+    CREATE INDEX IF NOT EXISTS idx_news_created_at ON news_posts(created_at DESC);
+
+    -- Polls (issue #194: voting for supplier or arbitrary group decisions)
+    CREATE TABLE IF NOT EXISTS polls (
+        id              SERIAL PRIMARY KEY,
+        procurement_id  INTEGER REFERENCES procurements(id) ON DELETE CASCADE,
+        author_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        question        VARCHAR(255) NOT NULL,
+        poll_type       VARCHAR(20) NOT NULL DEFAULT 'general',
+        is_closed       BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS poll_options (
+        id        SERIAL PRIMARY KEY,
+        poll_id   INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+        text      VARCHAR(200) NOT NULL,
+        position  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS poll_votes (
+        id          SERIAL PRIMARY KEY,
+        poll_id     INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+        option_id   INTEGER NOT NULL REFERENCES poll_options(id) ON DELETE CASCADE,
+        user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (poll_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_polls_procurement ON polls(procurement_id);
+
+    -- Supplier company cards (issue #194: form 3.1)
+    CREATE TABLE IF NOT EXISTS supplier_companies (
+        id              SERIAL PRIMARY KEY,
+        user_id         UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        name            VARCHAR(255) NOT NULL,
+        legal_address   TEXT NOT NULL DEFAULT '',
+        postal_address  TEXT NOT NULL DEFAULT '',
+        actual_address  TEXT NOT NULL DEFAULT '',
+        okved           VARCHAR(50) NOT NULL DEFAULT '',
+        ogrn            VARCHAR(50) NOT NULL DEFAULT '',
+        inn             VARCHAR(20) NOT NULL DEFAULT '',
+        contact_phone   VARCHAR(30) NOT NULL DEFAULT '',
+        email           VARCHAR(254) NOT NULL DEFAULT '',
+        is_published    BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    -- Supplier price lists (issue #194: form 3.2)
+    CREATE TABLE IF NOT EXISTS supplier_price_lists (
+        id              SERIAL PRIMARY KEY,
+        supplier_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        file_url        VARCHAR(255) NOT NULL DEFAULT '',
+        popular_items   JSONB NOT NULL DEFAULT '[]',
+        is_published    BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_price_lists_supplier ON supplier_price_lists(supplier_id);
+
+    -- Invitations (issue #194: organizer invites supplier or buyer)
+    CREATE TABLE IF NOT EXISTS invitations (
+        id              SERIAL PRIMARY KEY,
+        organizer_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        invitee_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+        invitee_email   VARCHAR(254) NOT NULL DEFAULT '',
+        invitee_role    VARCHAR(20) NOT NULL DEFAULT 'supplier',
+        procurement_id  INTEGER REFERENCES procurements(id) ON DELETE SET NULL,
+        message         TEXT NOT NULL DEFAULT '',
+        status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_invitations_invitee ON invitations(invitee_id, status);
+    CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(LOWER(invitee_email), status);
+
+    -- Closing documents (issue #194: form 3.3, supplier sends closing docs to buyers)
+    CREATE TABLE IF NOT EXISTS closing_documents (
+        id              SERIAL PRIMARY KEY,
+        procurement_id  INTEGER NOT NULL REFERENCES procurements(id) ON DELETE CASCADE,
+        supplier_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        file_url        VARCHAR(255) NOT NULL DEFAULT '',
+        comment         TEXT NOT NULL DEFAULT '',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    -- Withdrawal requests (issue #194: form 1.4 "Вывод средств")
+    CREATE TABLE IF NOT EXISTS withdrawal_requests (
+        id            SERIAL PRIMARY KEY,
+        user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        amount        NUMERIC(12, 2) NOT NULL,
+        bank_details  TEXT NOT NULL DEFAULT '',
+        status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+        processed_at  TIMESTAMPTZ,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawal_requests(user_id, status);
     """,
     # 002_seed_categories — idempotent seed for top-level + child categories.
     # The categories table has no UNIQUE constraint on name, so we guard with
