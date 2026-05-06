@@ -137,7 +137,7 @@ async def health():
     return {"status": "ok", "service": "auth-service"}
 
 
-@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+@app.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, pool: asyncpg.Pool = Depends(get_pool)):
     existing = await pool.fetchrow("SELECT id FROM users WHERE email=$1", body.email)
     if existing:
@@ -161,7 +161,7 @@ async def register(body: RegisterRequest, pool: asyncpg.Pool = Depends(get_pool)
     return {"success": True, "userId": str(user_id)}
 
 
-@app.post("/auth/login", response_model=TokenResponse)
+@app.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, pool: asyncpg.Pool = Depends(get_pool)):
     row = await pool.fetchrow(
         "SELECT id, password_hash, totp_enabled, totp_secret FROM users WHERE email=$1", body.email
@@ -189,7 +189,7 @@ async def login(body: LoginRequest, pool: asyncpg.Pool = Depends(get_pool)):
     return TokenResponse(access_token=access_token, refresh_token=refresh_raw)
 
 
-@app.post("/auth/refresh", response_model=TokenResponse)
+@app.post("/refresh", response_model=TokenResponse)
 async def refresh(body: RefreshRequest, pool: asyncpg.Pool = Depends(get_pool)):
     rows = await pool.fetch(
         "SELECT id, user_id, token_hash, expires_at FROM refresh_tokens WHERE expires_at > now()"
@@ -211,13 +211,13 @@ async def refresh(body: RefreshRequest, pool: asyncpg.Pool = Depends(get_pool)):
     return TokenResponse(access_token=access_token, refresh_token=new_refresh_raw)
 
 
-@app.post("/auth/logout")
+@app.post("/logout")
 async def logout(claims: dict = Depends(_get_claims), pool: asyncpg.Pool = Depends(get_pool)):
     await pool.execute("DELETE FROM refresh_tokens WHERE user_id=$1", uuid.UUID(claims["sub"]))
     return {"success": True}
 
 
-@app.get("/auth/me")
+@app.get("/me")
 async def me(claims: dict = Depends(_get_claims), pool: asyncpg.Pool = Depends(get_pool)):
     row = await pool.fetchrow(
         "SELECT id, email, phone, is_verified, totp_enabled, created_at FROM users WHERE id=$1",
