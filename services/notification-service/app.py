@@ -262,6 +262,35 @@ async def internal_notify(body: NotifyRequest):
     return {"success": True}
 
 
+class SendOtpRequest(BaseModel):
+    email: str
+    otp: str
+    subject: str | None = None
+    context: str = "login"
+
+
+@app.post("/internal/send-otp")
+async def internal_send_otp(body: SendOtpRequest):
+    """Send OTP verification code by email. Called by auth-service."""
+    is_registration = body.context == "registration"
+    subject = body.subject or (
+        "Groupbuy — код подтверждения регистрации" if is_registration else "Groupbuy — код для входа"
+    )
+    action_label = "регистрации" if is_registration else "входа"
+    body_html = (
+        f"<div style='font-family:sans-serif;max-width:480px;margin:0 auto'>"
+        f"<h2>Ваш код подтверждения</h2>"
+        f"<p>Введите этот код для завершения {action_label}:</p>"
+        f"<div style='font-size:32px;font-weight:bold;letter-spacing:8px;padding:16px;background:#f5f5f5;"
+        f"border-radius:8px;text-align:center'>{body.otp}</div>"
+        f"<p style='color:#888;font-size:13px'>Код действителен 10 минут. Не передавайте его никому.</p>"
+        f"</div>"
+    )
+    body_text = f"Ваш код для {action_label}: {body.otp}\nКод действителен 10 минут."
+    await _send_email(body.email, subject, body_html, body_text)
+    return {"success": True}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=PORT, reload=False)
