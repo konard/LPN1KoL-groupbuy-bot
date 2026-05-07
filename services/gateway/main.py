@@ -60,8 +60,11 @@ SERVICE_URLS: dict[str, str] = {
 PUBLIC_PATHS: frozenset[str] = frozenset(
     {
         "auth/login",
+        "auth/login/confirm",
         "auth/register",
+        "auth/register/confirm",
         "auth/refresh",
+        "auth/resend-code",
         "auth/forgot-password",
         "auth/reset-password",
     }
@@ -244,11 +247,41 @@ async def auth_register(request: Request) -> Response:
 @app.post(
     "/api/v1/auth/login",
     tags=["Аутентификация"],
-    summary="Вход в систему",
-    description="Аутентифицирует пользователя по email и паролю. Возвращает access_token и refresh_token. Поддерживает двухфакторную аутентификацию (TOTP).",
+    summary="Вход в систему — шаг 1",
+    description="Принимает номер телефона и отправляет OTP-код на зарегистрированный email пользователя.",
 )
 async def auth_login(request: Request) -> Response:
     return await _proxy_request(request, "auth", "login")
+
+
+@app.post(
+    "/api/v1/auth/login/confirm",
+    tags=["Аутентификация"],
+    summary="Вход в систему — шаг 2",
+    description="Принимает номер телефона и OTP-код. Возвращает access_token и refresh_token.",
+)
+async def auth_login_confirm(request: Request) -> Response:
+    return await _proxy_request(request, "auth", "login/confirm")
+
+
+@app.post(
+    "/api/v1/auth/register/confirm",
+    tags=["Аутентификация"],
+    summary="Регистрация — шаг 2",
+    description="Принимает номер телефона и OTP-код. Создаёт учётную запись и возвращает токены.",
+)
+async def auth_register_confirm(request: Request) -> Response:
+    return await _proxy_request(request, "auth", "register/confirm")
+
+
+@app.post(
+    "/api/v1/auth/resend-code",
+    tags=["Аутентификация"],
+    summary="Повторная отправка OTP-кода",
+    description="Повторно отправляет OTP-код для текущей сессии входа или регистрации (не чаще одного раза в 30 секунд).",
+)
+async def auth_resend_code(request: Request) -> Response:
+    return await _proxy_request(request, "auth", "resend-code")
 
 
 @app.post(
