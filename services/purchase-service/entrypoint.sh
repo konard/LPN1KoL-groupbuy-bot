@@ -7,4 +7,8 @@ for migration in /app/migrations/*.sql; do
   psql "$DATABASE_URL" -f "$migration"
 done
 echo "==> Migrations complete. Starting application..."
-exec node dist/main
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+else
+  exec node dist/main
+fi

@@ -41,7 +41,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
       - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
       - DEBUG=False
-      - ALLOWED_HOSTS=${DOMAIN:-localhost},127.0.0.1,${EXTERNAL_IP:-176.12.68.195},176.12.68.195
+      - ALLOWED_HOSTS=${DOMAIN:-localhost},127.0.0.1,${EXTERNAL_IP:-176.12.68.195},176.12.68.195,95.81.123.52
       # CORS: set CORS_ALLOWED_ORIGINS in .env when running without a domain.
       # Use http://<SERVER_IP> or http://localhost:PORT as appropriate.
       # Set CORS_ALLOWED_ORIGINS=* only for local development.
