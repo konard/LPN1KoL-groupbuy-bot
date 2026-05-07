@@ -319,7 +319,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  getNotifications: (userId) => request(`/chat/notifications/?user_id=${userId}`),
+  getNotifications: (userId) => request(`/chat/notifications/?user=${userId}`),
 
   markNotificationRead: (notificationId) =>
     request(`/chat/notifications/${notificationId}/mark_read/`, { method: 'POST' }),
