@@ -39,11 +39,11 @@ version: "3.9"
 #   postgres 512M | redis 256M | zookeeper 128M | kafka 512M | centrifugo 192M
 #   django-admin 512M | core 128M | bot 256M | telegram-adapter 128M
 #   mattermost-adapter 64M | websocket-server 96M | frontend-react 64M
-#   nginx 64M | certbot 32M | gateway 32M | auth-service 64M
+#   nginx 64M | certbot 32M | gateway 96M | auth-service 64M
 #   purchase-service 64M | payment-service 32M | chat-service 32M
 #   notification-service 48M | analytics-service 256M | search-service 32M
 #   reputation-service 48M
-#   Total ≈ 3062 MB
+#   Total ≈ 3126 MB
 ##############################################################################
 
 networks:
@@ -512,12 +512,18 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - groupbuy-network
     deploy:
       resources:
         limits:
-          memory: 32M
+          memory: 96M
 
   auth-service:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/auth-service:${IMAGE_TAG:-main}
