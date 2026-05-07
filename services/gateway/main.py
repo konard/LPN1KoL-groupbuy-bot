@@ -11,6 +11,8 @@
 * Ограничение запросов по IP (или по user_id при аутентификации) через Redis
   с фиксированным окном `${RATE_LIMIT_RPM}` rpm.
 * CORS middleware конфигурируется через `CORS_ORIGINS` (через запятую).
+* Сохраняет совместимые маршруты старого Go gateway: `/api/v1/wallets`,
+  `/api/v1/escrow`, `/api/v1/voting`, `/webhooks` и `/ws`.
 * `GET /health` возвращает 200 для docker healthcheck.
 
 Примечание для фронтенда (задача #178, раздел 3): React-контейнер
@@ -18,14 +20,15 @@
 а не напрямую к `core:8000`.
 """
 
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Iterable
 
 import httpx
 import redis.asyncio as aioredis
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 
@@ -37,6 +40,7 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "60"))
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 REDIS_ADDR = os.getenv("REDIS_ADDR", "redis:6379")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
@@ -143,8 +147,41 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 
+def _bearer_token(auth_header: str) -> str | None:
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
+def _client_ip(request: Request) -> str:
+    if real_ip := request.headers.get("x-real-ip"):
+        return real_ip.strip()
+    if forwarded_for := request.headers.get("x-forwarded-for"):
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _join_path(prefix: str, path: str = "") -> str:
+    path = path.strip("/")
+    return prefix.strip("/") if not path else f"{prefix.strip('/')}/{path}"
+
+
 def _filter_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:
     return {k: v for k, v in headers if k.lower() not in HOP_BY_HOP_HEADERS}
+
+
+async def _is_token_blacklisted(redis: aioredis.Redis | None, token: str) -> bool:
+    if redis is None:
+        return False
+    try:
+        return bool(await redis.exists(f"jwt:blacklist:{token}"))
+    except AttributeError:
+        return False
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Redis blacklist check failed (%s); allowing token", exc)
+        return False
 
 
 async def _enforce_rate_limit(redis: aioredis.Redis | None, identity: str) -> None:
@@ -167,6 +204,9 @@ async def _proxy_request(
     request: Request,
     service_name: str,
     path: str,
+    *,
+    public_path: str | None = None,
+    require_auth: bool | None = None,
 ) -> Response:
     """Основная логика проксирования запроса к upstream сервису."""
     base_url = SERVICE_URLS.get(service_name)
@@ -174,11 +214,19 @@ async def _proxy_request(
         raise HTTPException(status_code=404, detail=f"Неизвестный сервис '{service_name}'")
 
     # Аутентификация: требуется, если путь не в PUBLIC_PATHS.
-    is_public = f"{service_name}/{path}".rstrip("/") in PUBLIC_PATHS
+    gateway_path = (public_path if public_path is not None else f"{service_name}/{path}").strip("/")
+    is_public = require_auth is False or (
+        require_auth is None and gateway_path.rstrip("/") in PUBLIC_PATHS
+    )
     claims: dict | None = None
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.lower().startswith("bearer "):
-        claims = _decode_jwt(auth_header.split(" ", 1)[1].strip())
+    token = _bearer_token(request.headers.get("authorization", ""))
+    if token:
+        claims = _decode_jwt(token)
+
+    if token and claims and await _is_token_blacklisted(request.app.state.redis, token):
+        if not is_public:
+            raise HTTPException(status_code=401, detail="Токен отозван")
+        claims = None
 
     if not is_public and claims is None:
         raise HTTPException(status_code=401, detail="Требуется аутентификация")
@@ -187,7 +235,7 @@ async def _proxy_request(
     identity = (
         f"user:{claims.get('sub')}"
         if claims and claims.get("sub")
-        else f"ip:{request.client.host if request.client else 'unknown'}"
+        else f"ip:{_client_ip(request)}"
     )
     await _enforce_rate_limit(request.app.state.redis, identity)
 
@@ -199,6 +247,7 @@ async def _proxy_request(
     forwarded = _filter_headers(request.headers.items())
     if claims:
         forwarded["x-user-id"] = str(claims.get("sub", ""))
+        forwarded["x-user-email"] = str(claims.get("email", ""))
         forwarded["x-user-role"] = str(claims.get("role", "user"))
 
     body = await request.body()
@@ -214,12 +263,89 @@ async def _proxy_request(
         logger.error("Upstream %s недоступен: %s", target_url, exc)
         raise HTTPException(status_code=502, detail="Upstream сервис недоступен") from exc
 
+    logger.info(
+        "%s %s -> %s %d",
+        request.method,
+        request.url.path,
+        target_url,
+        upstream.status_code,
+    )
+
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
         headers=_filter_headers(upstream.headers.items()),
         media_type=upstream.headers.get("content-type"),
     )
+
+
+def _websocket_target(path: str, query: str) -> str:
+    base_url = SERVICE_URLS["chat"].rstrip("/")
+    if base_url.startswith("https://"):
+        base_url = "wss://" + base_url.removeprefix("https://")
+    elif base_url.startswith("http://"):
+        base_url = "ws://" + base_url.removeprefix("http://")
+    target = f"{base_url}/ws"
+    if path:
+        target += f"/{path.lstrip('/')}"
+    if query:
+        target += f"?{query}"
+    return target
+
+
+def _websocket_headers(websocket: WebSocket) -> dict[str, str]:
+    return _filter_headers((k, v) for k, v in websocket.headers.items())
+
+
+async def _proxy_websocket(websocket: WebSocket, path: str = "") -> None:
+    """Proxy `/ws` traffic to chat-service, matching the old Go gateway route."""
+    await websocket.accept()
+    target_url = _websocket_target(path, websocket.url.query)
+
+    try:
+        import websockets
+
+        async with websockets.connect(
+            target_url,
+            extra_headers=_websocket_headers(websocket),
+        ) as upstream:
+            logger.info("WS %s -> %s connected", websocket.url.path, target_url)
+
+            async def client_to_upstream() -> None:
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        await upstream.close()
+                        return
+                    if message.get("text") is not None:
+                        await upstream.send(message["text"])
+                    elif message.get("bytes") is not None:
+                        await upstream.send(message["bytes"])
+
+            async def upstream_to_client() -> None:
+                async for message in upstream:
+                    if isinstance(message, bytes):
+                        await websocket.send_bytes(message)
+                    else:
+                        await websocket.send_text(message)
+
+            tasks = [
+                asyncio.create_task(client_to_upstream()),
+                asyncio.create_task(upstream_to_client()),
+            ]
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                task.result()
+            with suppress(asyncio.CancelledError):
+                await asyncio.gather(*pending)
+    except WebSocketDisconnect:
+        logger.info("WS %s disconnected", websocket.url.path)
+    except Exception as exc:
+        logger.error("WS upstream %s недоступен: %s", target_url, exc)
+        with suppress(RuntimeError):
+            await websocket.close(code=1011)
 
 
 # ─── Маршруты: служебные ──────────────────────────────────────────────────────
@@ -793,8 +919,124 @@ async def analytics_reports_generate(request: Request) -> Response:
 
 
 @app.api_route(
+    "/api/v1/wallets",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api/v1/wallets/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def payments_wallets_alias(request: Request, path: str = "") -> Response:
+    """Legacy alias: /api/v1/wallets/* -> payment-service /wallets/*."""
+    upstream_path = _join_path("wallets", path)
+    return await _proxy_request(request, "payments", upstream_path, public_path=upstream_path)
+
+
+@app.api_route(
+    "/api/v1/escrow",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api/v1/escrow/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def payments_escrow_alias(request: Request, path: str = "") -> Response:
+    """Legacy alias: /api/v1/escrow/* -> payment-service /escrow/*."""
+    upstream_path = _join_path("escrow", path)
+    return await _proxy_request(request, "payments", upstream_path, public_path=upstream_path)
+
+
+@app.api_route(
+    "/api/v1/commission",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api/v1/commission/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def payments_commission_alias(request: Request, path: str = "") -> Response:
+    """Legacy alias: /api/v1/commission/* -> payment-service /commission/*."""
+    upstream_path = _join_path("commission", path)
+    return await _proxy_request(request, "payments", upstream_path, public_path=upstream_path)
+
+
+@app.api_route(
+    "/api/v1/voting",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api/v1/voting/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def purchases_voting_alias(request: Request, path: str = "") -> Response:
+    """Legacy alias: /api/v1/voting/* -> purchase-service /*."""
+    return await _proxy_request(request, "purchases", path, public_path=_join_path("voting", path))
+
+
+@app.api_route(
+    "/api/v1/reviews",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api/v1/reviews/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def reputation_reviews_alias(request: Request, path: str = "") -> Response:
+    """Legacy alias: /api/v1/reviews/* -> reputation-service /reviews/*."""
+    upstream_path = _join_path("reviews", path)
+    return await _proxy_request(request, "reputation", upstream_path, public_path=upstream_path)
+
+
+@app.api_route(
+    "/api/v1/complaints",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api/v1/complaints/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def reputation_complaints_alias(request: Request, path: str = "") -> Response:
+    """Legacy alias: /api/v1/complaints/* -> reputation-service /complaints/*."""
+    upstream_path = _join_path("complaints", path)
+    return await _proxy_request(request, "reputation", upstream_path, public_path=upstream_path)
+
+
+@app.api_route(
+    "/webhooks",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+@app.api_route(
+    "/webhooks/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def payment_webhooks_proxy(request: Request, path: str = "") -> Response:
+    """Webhook routes are public; providers validate payload signatures upstream."""
+    return await _proxy_request(request, "payments", path, require_auth=False)
+
+
+@app.websocket("/ws")
+@app.websocket("/ws/{path:path}")
+async def websocket_proxy(websocket: WebSocket, path: str = "") -> None:
+    await _proxy_websocket(websocket, path)
+
+
+@app.api_route(
     "/api/v1/{service_name}/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=PROXY_METHODS,
     include_in_schema=False,
 )
 async def proxy(service_name: str, path: str, request: Request) -> Response:
