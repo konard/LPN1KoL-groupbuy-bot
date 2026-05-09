@@ -23,6 +23,9 @@ from app.modules.purchase.router import router as purchase_router
 from app.modules.reputation.router import router as reputation_router
 from app.modules.search.router import close_search, init_search, router as search_router
 
+CORS_ORIGINS = ["*"]
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,8 +56,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

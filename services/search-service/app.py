@@ -24,7 +24,8 @@ PORT = int(os.getenv("PORT", "4007"))
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()] or ["*"]
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 
 INDEX_NAME = "purchases"
 
@@ -69,7 +70,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Search Service", version="1.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_redis() -> aioredis.Redis:

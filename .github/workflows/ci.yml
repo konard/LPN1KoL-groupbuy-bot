@@ -75,7 +75,8 @@ jobs:
             tests/test_issue_147_compose_postgres_healthcheck.py \
             tests/test_issue_150_python_compose_robustness.py \
             tests/test_issue_216_unified_gateway_auth.py \
-            tests/test_issue_218_legacy_auth_routing.py
+            tests/test_issue_218_legacy_auth_routing.py \
+            tests/test_issue_220_frontend_backend_contract.py
 
   # Build and test Rust backend
   rust-build:

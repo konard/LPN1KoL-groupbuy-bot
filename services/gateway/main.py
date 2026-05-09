@@ -38,7 +38,8 @@ PORT = int(os.getenv("PORT", "3000"))
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "60"))
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
@@ -130,8 +131,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS or ["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -447,6 +448,16 @@ async def auth_me(request: Request) -> Response:
 )
 async def legacy_auth_proxy(path: str, request: Request) -> Response:
     """Legacy Docker/browser alias: `/auth/*` reaches auth-service root paths."""
+    return await _proxy_request(request, "auth", path)
+
+
+@app.api_route(
+    "/api/auth/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def legacy_api_auth_proxy(path: str, request: Request) -> Response:
+    """Legacy React alias: `/api/auth/*` reaches auth-service root paths."""
     return await _proxy_request(request, "auth", path)
 
 
