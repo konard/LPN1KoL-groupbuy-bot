@@ -218,6 +218,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      auth-service:
+        condition: service_healthy
     networks:
       - groupbuy-network
     restart: unless-stopped
@@ -250,6 +252,12 @@ services:
         condition: service_started
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4001/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
     deploy:
       resources:

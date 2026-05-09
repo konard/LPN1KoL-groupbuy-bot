@@ -21,16 +21,16 @@ version: "3.9"
 #                               /ws/* → backend-monolith (Socket.IO), / → user-frontend
 #                       Config: infrastructure/nginx/nginx-monolith.conf
 #   certbot           — Let's Encrypt certificate renewal
-#   gateway           — Go (gorilla/mux) API gateway; all service URLs point to backend-monolith
+#   gateway           — Python/FastAPI API gateway; all service URLs point to backend-monolith
 #   analytics         — Python FastAPI; separate service, receives events from monolith via Kafka
 #   bot               — Telegram/groupbuy bot (calls backend-monolith API)
 #
 #   Removed (consolidated into backend-monolith):
 #   - django-admin (Django admin panel)  → admin-backend (NestJS) + admin-frontend
 #   - core (Rust binary)                 → backend-monolith FastAPI
-#   - chat-service (Go + Centrifugo)     → Socket.IO (python-socketio)
-#   - notification-service (Node.js)     → httpx-based async dispatch
-#   - search-service (Go)                → elasticsearch-py[async]
+#   - chat-service (Python/FastAPI + Centrifugo) → Socket.IO (python-socketio)
+#   - notification-service (Python/FastAPI)      → httpx-based async dispatch
+#   - search-service (Python/FastAPI)            → elasticsearch-py[async]
 #   - websocket-server (legacy)          → Socket.IO in backend-monolith
 #
 # Networks:

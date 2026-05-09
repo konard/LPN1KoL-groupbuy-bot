@@ -89,10 +89,8 @@ services:
           memory: 160M
 
   # ── Unified Application (Python + FastAPI) ──────────────────────────────────
-  # Replaces: gateway (Go), auth-service (NestJS), purchase-service (NestJS+Kafka),
-  #           payment-service (Go), chat-service (Go+Centrifugo),
-  #           analytics-service (Python/FastAPI), notification-service (Node.js),
-  #           search-service (Go+ES), reputation-service (NestJS).
+  # Consolidates the gateway, auth, purchase, payment, chat, analytics,
+  # notification, search, and reputation service roles into one FastAPI app.
   app:
     build:
       context: ./app

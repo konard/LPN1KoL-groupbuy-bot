@@ -3,10 +3,10 @@ version: "3.9"
 ##############################################################################
 # docker-compose.unified.yml — all-in-one production + microservices stack
 #
-# Combines docker-compose.prod.yml (main app: Rust core, Django admin, bot,
-# frontend, nginx, certbot) with docker-compose.light.yml (microservices:
-# gateway, auth, purchase, payment, chat, notification, analytics, search,
-# reputation) into a single file.
+# Combines docker-compose.prod.yml (main app: core API, Django admin, bot,
+# frontend, nginx, certbot) with docker-compose.light.yml (Python/FastAPI
+# services: gateway, auth, purchase, payment, chat, notification, analytics,
+# search, reputation) into a single file.
 #
 # Infrastructure (postgres, redis, kafka, zookeeper, centrifugo) is shared
 # by all services in this file.
@@ -422,7 +422,10 @@ services:
     container_name: groupbuy-frontend
     restart: on-failure:3
     depends_on:
-      - core
+      core:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
       - groupbuy-network
     healthcheck:
@@ -460,7 +463,7 @@ services:
       frontend-react:
         condition: service_healthy
       gateway:
-        condition: service_started
+        condition: service_healthy
     networks:
       - groupbuy-network
     deploy:
@@ -512,6 +515,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      auth-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s
@@ -553,6 +558,12 @@ services:
         condition: service_started
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4001/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
