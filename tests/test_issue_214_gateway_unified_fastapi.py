@@ -141,6 +141,14 @@ class TestGatewayProxyCompatibility:
         assert response.status_code == 200
         assert str(transport.calls[-1].url) == "http://auth-service:4001/login"
 
+    def test_legacy_auth_login_alias_stays_public_and_targets_auth_service_root(
+        self, gateway
+    ):
+        client, _redis, transport = gateway
+        response = client.post("/auth/login", json={"phone": "+79001234567"})
+        assert response.status_code == 200
+        assert str(transport.calls[-1].url) == "http://auth-service:4001/login"
+
     def test_payment_legacy_wallet_alias_is_preserved(self, gateway):
         client, _redis, transport = gateway
         _token, headers = _bearer(

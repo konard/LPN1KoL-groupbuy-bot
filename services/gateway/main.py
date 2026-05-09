@@ -11,8 +11,8 @@
 * Ограничение запросов по IP (или по user_id при аутентификации) через Redis
   с фиксированным окном `${RATE_LIMIT_RPM}` rpm.
 * CORS middleware конфигурируется через `CORS_ORIGINS` (через запятую).
-* Сохраняет совместимые маршруты старого Go gateway: `/api/v1/wallets`,
-  `/api/v1/escrow`, `/api/v1/voting`, `/webhooks` и `/ws`.
+* Сохраняет совместимые маршруты старого Go gateway: `/auth/*`,
+  `/api/v1/wallets`, `/api/v1/escrow`, `/api/v1/voting`, `/webhooks` и `/ws`.
 * `GET /health` возвращает 200 для docker healthcheck.
 
 Примечание для фронтенда (задача #178, раздел 3): React-контейнер
@@ -438,6 +438,16 @@ async def auth_logout(request: Request) -> Response:
 )
 async def auth_me(request: Request) -> Response:
     return await _proxy_request(request, "auth", "me")
+
+
+@app.api_route(
+    "/auth/{path:path}",
+    methods=PROXY_METHODS,
+    include_in_schema=False,
+)
+async def legacy_auth_proxy(path: str, request: Request) -> Response:
+    """Legacy Docker/browser alias: `/auth/*` reaches auth-service root paths."""
+    return await _proxy_request(request, "auth", path)
 
 
 # ─── Маршруты: Закупки ────────────────────────────────────────────────────────
