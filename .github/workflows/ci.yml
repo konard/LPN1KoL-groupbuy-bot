@@ -47,7 +47,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pyyaml
+          pip install pytest pyyaml \
+            fastapi httpx asyncpg "redis[asyncio]" \
+            passlib python-jose pyotp pydantic \
+            aiokafka python-multipart
 
       - name: Guard against CRLF line endings in shell scripts
         # Independent fast check that fails the job before pytest if any *.sh
@@ -77,7 +80,8 @@ jobs:
             tests/test_issue_216_unified_gateway_auth.py \
             tests/test_issue_218_legacy_auth_routing.py \
             tests/test_issue_220_frontend_backend_contract.py \
-            tests/test_issue_222_frontend_auth_compose.py
+            tests/test_issue_222_frontend_auth_compose.py \
+            tests/test_issue_224_register_endpoint.py
 
   # Build and test Rust backend
   rust-build:
