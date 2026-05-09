@@ -10,5 +10,5 @@ echo "==> Migrations complete. Starting application..."
 if [ "$#" -gt 0 ]; then
   exec "$@"
 else
-  exec node dist/main
+  exec uvicorn app:app --host 0.0.0.0 --port "${PORT:-4002}"
 fi
