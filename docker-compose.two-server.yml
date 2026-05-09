@@ -22,7 +22,7 @@ services:
   # SERVER 1: Chat Services
   # ============================================
 
-  # WebSocket server for real-time chat (Python - to be migrated to Rust)
+  # WebSocket server for real-time chat (Python aiohttp service)
   websocket-server:
     build: ./infrastructure/websocket
     container_name: groupbuy-chat-server
