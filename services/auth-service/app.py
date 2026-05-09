@@ -52,7 +52,8 @@ JWT_REFRESH_EXPIRES_IN = int(os.getenv("JWT_REFRESH_EXPIRES_IN_SECONDS", "604800
 BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "10"))
 NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:4005")
 CORE_API_URL = os.getenv("CORE_API_URL", "http://core:8000")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()] or ["*"]
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 
 OTP_TTL_SECONDS = 600        # 10 minutes
 OTP_RESEND_COOLDOWN = 30     # seconds
@@ -316,7 +317,7 @@ class RefreshRequest(BaseModel):
 
 app = FastAPI(title="Auth Service", version="2.0.0", lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True,
+    CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"], allow_headers=["*"],
 )
 

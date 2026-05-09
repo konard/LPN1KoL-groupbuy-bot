@@ -18,7 +18,8 @@ logger = logging.getLogger("reputation-service")
 PORT = int(os.getenv("PORT", "4008"))
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/reputation_db")
 KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()] or ["*"]
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 
 _pool: asyncpg.Pool | None = None
 _producer: AIOKafkaProducer | None = None
@@ -102,7 +103,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Reputation Service", version="1.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_pool() -> asyncpg.Pool:
