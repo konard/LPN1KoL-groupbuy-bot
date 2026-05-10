@@ -41,6 +41,8 @@ RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "60"))
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "30"))
+UPSTREAM_RETRIES = max(1, int(os.getenv("UPSTREAM_RETRIES", "2")))
 PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 REDIS_ADDR = os.getenv("REDIS_ADDR", "redis:6379")
@@ -100,7 +102,7 @@ logger = logging.getLogger("gateway")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.http = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
+    app.state.http = httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT_SECONDS, follow_redirects=False)
     try:
         app.state.redis = aioredis.from_url(REDIS_URL, decode_responses=True)
         await app.state.redis.ping()
@@ -253,16 +255,30 @@ async def _proxy_request(
 
     body = await request.body()
 
-    try:
-        upstream = await request.app.state.http.request(
-            method=request.method,
-            url=target_url,
-            headers=forwarded,
-            content=body,
-        )
-    except httpx.RequestError as exc:
-        logger.error("Upstream %s недоступен: %s", target_url, exc)
-        raise HTTPException(status_code=502, detail="Upstream сервис недоступен") from exc
+    last_error: httpx.RequestError | None = None
+    for attempt in range(1, UPSTREAM_RETRIES + 1):
+        try:
+            upstream = await request.app.state.http.request(
+                method=request.method,
+                url=target_url,
+                headers=forwarded,
+                content=body,
+            )
+            break
+        except httpx.RequestError as exc:
+            last_error = exc
+            logger.warning(
+                "Upstream %s недоступен, попытка %d/%d: %s",
+                target_url,
+                attempt,
+                UPSTREAM_RETRIES,
+                exc,
+            )
+            if attempt < UPSTREAM_RETRIES:
+                await asyncio.sleep(min(0.2 * attempt, 1.0))
+    else:
+        logger.error("Upstream %s недоступен после %d попыток", target_url, UPSTREAM_RETRIES)
+        raise HTTPException(status_code=502, detail="Upstream сервис недоступен") from last_error
 
     logger.info(
         "%s %s -> %s %d",

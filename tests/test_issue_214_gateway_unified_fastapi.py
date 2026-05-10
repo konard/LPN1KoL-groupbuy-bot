@@ -41,9 +41,13 @@ class _FakeRedis:
 class _StubTransport(httpx.AsyncBaseTransport):
     def __init__(self) -> None:
         self.calls: list[httpx.Request] = []
+        self.failures_before_success = 0
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(request)
+        if self.failures_before_success > 0:
+            self.failures_before_success -= 1
+            raise httpx.ConnectError("temporary upstream failure", request=request)
         return httpx.Response(
             200,
             json={"ok": True},
@@ -118,7 +122,7 @@ class TestUnifiedComposeGatewayService:
 class TestGatewayDockerImage:
     def test_dockerfile_runs_fastapi_not_go(self):
         dockerfile = (GATEWAY_DIR / "Dockerfile").read_text()
-        assert "python:3.12-slim" in dockerfile
+        assert "python:3.11-slim" in dockerfile
         assert "uvicorn" in dockerfile
         assert "main:app" in dockerfile
         assert "go build" not in dockerfile.lower()
@@ -194,3 +198,12 @@ class TestGatewayProxyCompatibility:
 
         assert response.status_code == 401
         assert transport.calls == []
+
+    def test_transient_upstream_errors_are_retried(self, gateway):
+        client, _redis, transport = gateway
+        transport.failures_before_success = 1
+
+        response = client.post("/api/v1/auth/login", json={"phone": "+79001234567"})
+
+        assert response.status_code == 200
+        assert len(transport.calls) == 2

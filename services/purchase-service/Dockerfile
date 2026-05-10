@@ -16,5 +16,8 @@ RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 4002
 
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=30s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4002/health').read()"
+
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4002"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4002"]
