@@ -32,7 +32,7 @@ describe('useStore – session persistence across page reloads (issue #342)', ()
     useStore = mod.useStore;
 
     const state = useStore.getState();
-    expect(state.user).toEqual({ id: 'user-42', email: 'a@b.com', role: 'buyer' });
+    expect(state.user).toEqual({ id: 'user-42', email: 'a@b.com', role: 'buyer', coreId: null });
     expect(state.loginModalOpen).toBe(false);
   });
 
@@ -68,7 +68,7 @@ describe('useStore – session persistence across page reloads (issue #342)', ()
 
     expect(localStorage.getItem('authToken')).toBe(fakeJwt);
     expect(localStorage.getItem('userId')).toBe('user-42');
-    expect(useStore.getState().user).toEqual({ id: 'user-42', email: 'a@b.com', role: 'buyer' });
+    expect(useStore.getState().user).toEqual({ id: 'user-42', email: 'a@b.com', role: 'buyer', coreId: null });
     expect(useStore.getState().loginModalOpen).toBe(false);
   });
 
