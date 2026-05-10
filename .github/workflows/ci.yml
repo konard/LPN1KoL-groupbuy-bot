@@ -81,6 +81,7 @@ jobs:
             tests/test_issue_218_legacy_auth_routing.py \
             tests/test_issue_220_frontend_backend_contract.py \
             tests/test_issue_222_frontend_auth_compose.py \
+            tests/test_issue_226_unified_image_prefix.py \
             tests/test_issue_224_register_endpoint.py
 
   # Build and test Rust backend

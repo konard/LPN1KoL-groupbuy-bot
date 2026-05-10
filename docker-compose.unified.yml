@@ -18,6 +18,8 @@ version: "3.9"
 #
 # Images are pulled from GitHub Container Registry (ghcr.io).
 # Set IMAGE_TAG in .env to pin a specific version (default: main).
+# Set IMAGE_PREFIX only when pulling images from a fork or custom registry path;
+# by default this matches the lower-cased GHCR namespace published by CI/CD.
 # If registry images are unavailable, run with --build to build locally
 # from the source Dockerfiles in each service directory.
 #
@@ -220,7 +222,7 @@ services:
   # ── Main Application (from docker-compose.prod.yml) ────────────────────────
 
   django-admin:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/django-admin:${IMAGE_TAG:-main}
     build:
       context: ./core
     container_name: groupbuy-django-admin
@@ -265,7 +267,7 @@ services:
           memory: 512M
 
   core:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/core:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/core:${IMAGE_TAG:-main}
     build:
       context: ./core-rust
     container_name: groupbuy-core
@@ -296,7 +298,7 @@ services:
           memory: 128M
 
   bot:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/bot:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/bot:${IMAGE_TAG:-main}
     build:
       context: ./bot
     container_name: groupbuy-bot
@@ -339,7 +341,7 @@ services:
           memory: 32M
 
   telegram-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/telegram-adapter:${IMAGE_TAG:-main}
     build:
       context: ./adapters/telegram
     container_name: groupbuy-telegram-adapter
@@ -362,7 +364,7 @@ services:
           memory: 128M
 
   mattermost-adapter:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/mattermost-adapter:${IMAGE_TAG:-main}
     build:
       context: ./adapters/mattermost
     container_name: groupbuy-mattermost-adapter
@@ -387,7 +389,7 @@ services:
           memory: 64M
 
   websocket-server:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/websocket:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/websocket:${IMAGE_TAG:-main}
     build:
       context: ./infrastructure/websocket
     container_name: groupbuy-websocket
@@ -416,7 +418,7 @@ services:
           memory: 96M
 
   frontend-react:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/frontend:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/frontend:${IMAGE_TAG:-main}
     build:
       context: ./frontend-react
     container_name: groupbuy-frontend
@@ -489,7 +491,7 @@ services:
   # ── Microservices (from docker-compose.light.yml) ─────────────────────────
 
   gateway:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/gateway:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/gateway:${IMAGE_TAG:-main}
     build:
       context: ./services/gateway
     container_name: groupbuy-gateway
@@ -531,7 +533,7 @@ services:
           memory: 96M
 
   auth-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/auth-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/auth-service:${IMAGE_TAG:-main}
     build:
       context: ./services/auth-service
     container_name: groupbuy-auth-service
@@ -570,7 +572,7 @@ services:
           memory: 64M
 
   purchase-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/purchase-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/purchase-service:${IMAGE_TAG:-main}
     build:
       context: ./services/purchase-service
     container_name: groupbuy-purchase-service
@@ -594,7 +596,7 @@ services:
           memory: 64M
 
   payment-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/payment-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/payment-service:${IMAGE_TAG:-main}
     build:
       context: ./services/payment-service
     container_name: groupbuy-payment-service
@@ -619,7 +621,7 @@ services:
           memory: 32M
 
   chat-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/chat-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/chat-service:${IMAGE_TAG:-main}
     build:
       context: ./services/chat-service
     container_name: groupbuy-chat-service
@@ -646,7 +648,7 @@ services:
           memory: 32M
 
   notification-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/notification-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/notification-service:${IMAGE_TAG:-main}
     build:
       context: ./services/notification-service
     container_name: groupbuy-notification-service
@@ -680,7 +682,7 @@ services:
           memory: 48M
 
   analytics-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/analytics-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/analytics-service:${IMAGE_TAG:-main}
     build:
       context: ./services/analytics-service
     container_name: groupbuy-analytics-service
@@ -710,7 +712,7 @@ services:
           memory: 256M
 
   search-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/search-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/search-service:${IMAGE_TAG:-main}
     build:
       context: ./services/search-service
     container_name: groupbuy-search-service
@@ -733,7 +735,7 @@ services:
           memory: 32M
 
   reputation-service:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-mixabyk1996/groupbuy-bot}/reputation-service:${IMAGE_TAG:-main}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/reputation-service:${IMAGE_TAG:-main}
     build:
       context: ./services/reputation-service
     container_name: groupbuy-reputation-service
