@@ -423,6 +423,13 @@ services:
       context: ./frontend-react
     container_name: groupbuy-frontend
     restart: on-failure:3
+    environment:
+      # Used when running the Vite dev server in this compose network. The
+      # production image serves through nginx.conf, which already proxies these
+      # paths to the same Docker services.
+      VITE_AUTH_PROXY_TARGET: http://gateway:3000
+      VITE_API_PROXY_TARGET: http://core:8000
+      VITE_WS_PROXY_TARGET: ws://websocket-server:8765
     depends_on:
       core:
         condition: service_healthy
