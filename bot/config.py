@@ -14,6 +14,10 @@ class BotConfig:
     # Telegram
     telegram_token: str = os.getenv("TELEGRAM_TOKEN", "")
 
+    # Proxy (SOCKS5 via telegram-proxy service; only used when TELEGRAM_USE_PROXY=true)
+    telegram_use_proxy: bool = os.getenv("TELEGRAM_USE_PROXY", "false").lower() == "true"
+    telegram_proxy_url: str = os.getenv("TELEGRAM_PROXY_URL", "socks5://telegram-proxy:1080")
+
     # VK
     vk_token: str = os.getenv("VK_TOKEN", "")
 

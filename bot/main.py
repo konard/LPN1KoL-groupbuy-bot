@@ -206,9 +206,15 @@ async def main():
         return
 
     # Initialize bot and dispatcher
+    bot_kwargs = {}
+    if config.telegram_use_proxy and config.telegram_proxy_url:
+        from aiogram.client.session.aiohttp import AiohttpSession
+        bot_kwargs["session"] = AiohttpSession(proxy=config.telegram_proxy_url)
+        logger.info("Telegram proxy enabled: %s", config.telegram_proxy_url)
     _bot = Bot(
         token=config.telegram_token,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
+        **bot_kwargs,
     )
     storage = MemoryStorage()
     _dp = Dispatcher(storage=storage)
