@@ -267,7 +267,8 @@ async def main():
             except TelegramNetworkError as exc:
                 logger.warning(
                     "delete_webhook failed (%s) — continuing to polling; "
-                    "aiogram will retry on the next poll cycle.", exc,
+                    "aiogram will retry on the next poll cycle.",
+                    exc,
                 )
             await _dp.start_polling(_bot)
     finally:
