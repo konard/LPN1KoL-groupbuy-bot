@@ -14,6 +14,7 @@ from keyboards import (
     get_main_keyboard,
     get_guest_keyboard,
     get_profile_keyboard,
+    get_role_keyboard,
     get_balance_keyboard,
     get_deposit_keyboard,
 )
@@ -540,3 +541,88 @@ async def notifications_all(callback: CallbackQuery):
 async def notifications_mark_read(callback: CallbackQuery):
     """Mark all notifications as read (placeholder)"""
     await callback.answer("All notifications marked as read.", show_alert=True)
+
+
+@router.callback_query(F.data == "edit_phone")
+async def edit_phone_start(callback: CallbackQuery, state: FSMContext):
+    """Prompt user to send a new phone number."""
+    from aiogram.fsm.state import State, StatesGroup
+
+    class EditPhoneStates(StatesGroup):
+        waiting_for_phone = State()
+
+    await state.set_state(EditPhoneStates.waiting_for_phone)
+    await callback.message.edit_text(
+        "Please enter your new phone number (e.g., +79991234567):",
+        reply_markup=None,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "edit_email")
+async def edit_email_start(callback: CallbackQuery, state: FSMContext):
+    """Prompt user to send a new email address."""
+    from aiogram.fsm.state import State, StatesGroup
+
+    class EditEmailStates(StatesGroup):
+        waiting_for_email = State()
+
+    await state.set_state(EditEmailStates.waiting_for_email)
+    await callback.message.edit_text(
+        "Please enter your new email address:",
+        reply_markup=None,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "change_role")
+async def change_role_start(callback: CallbackQuery):
+    """Show role selection keyboard so the user can switch their role."""
+    await callback.message.edit_text(
+        "Select your new role:",
+        reply_markup=get_role_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("role_"))
+async def change_role_select(callback: CallbackQuery):
+    """Process role selection from the profile change-role flow.
+
+    The registration dialog also uses role_ callbacks but only while the
+    RegistrationStates.waiting_for_role state is active.  This handler runs
+    outside any FSM state, so it only fires after registration is complete.
+    """
+    role = callback.data.split("_", 1)[1]
+    valid_roles = {"buyer", "organizer", "supplier"}
+    if role not in valid_roles:
+        await callback.answer("Unknown role.", show_alert=True)
+        return
+
+    user = await api_client.get_user_by_platform(
+        platform="telegram", platform_user_id=str(callback.from_user.id)
+    )
+    if not user:
+        await callback.answer(
+            "User not found. Please use /start to register.", show_alert=True
+        )
+        return
+
+    updated = await api_client.update_user(user["id"], {"role": role})
+    if not updated:
+        await callback.answer(
+            "Failed to change role. Please try again later.", show_alert=True
+        )
+        return
+
+    role_display = {
+        "buyer": "Buyer",
+        "organizer": "Organizer",
+        "supplier": "Supplier",
+    }.get(role, role)
+    await callback.message.edit_text(
+        f"Your role has been changed to: *{role_display}*",
+        parse_mode="Markdown",
+        reply_markup=get_profile_keyboard(),
+    )
+    await callback.answer(f"Role changed to {role_display}")

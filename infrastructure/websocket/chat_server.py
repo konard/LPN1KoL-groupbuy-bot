@@ -2,6 +2,7 @@
 WebSocket Chat Server for GroupBuy Bot
 Provides real-time messaging in procurement chats
 """
+
 import asyncio
 import json
 import logging
@@ -15,8 +16,7 @@ import jwt
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class ChatServer:
     # Number of consecutive missed pongs before a connection is considered dead
     MAX_MISSED_PONGS = 2
 
-    def __init__(self, host: str = '0.0.0.0', port: int = 8765):
+    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
         self.host = host
         self.port = port
         self.app = web.Application()
@@ -45,38 +45,40 @@ class ChatServer:
         self.message_history: Dict[int, list] = {}
 
         # Core API URL
-        self.core_api_url = os.getenv('CORE_API_URL', 'http://localhost:8000/api')
+        self.core_api_url = os.getenv("CORE_API_URL", "http://core:8000/api")
 
         # JWT secret (in production, use env var)
-        self.jwt_secret = os.getenv('JWT_SECRET', 'your-secret-key')
+        self.jwt_secret = os.getenv("JWT_SECRET", "your-secret-key")
 
     def setup_routes(self):
         """Setup HTTP and WebSocket routes"""
-        self.app.router.add_get('/health', self.health_check)
-        self.app.router.add_get('/ws/procurement/{procurement_id}/', self.websocket_handler)
+        self.app.router.add_get("/health", self.health_check)
+        self.app.router.add_get(
+            "/ws/procurement/{procurement_id}/", self.websocket_handler
+        )
 
     async def health_check(self, request):
         """Health check endpoint"""
-        return web.json_response({'status': 'healthy'})
+        return web.json_response({"status": "healthy"})
 
     async def websocket_handler(self, request):
         """Handle WebSocket connections"""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
-        procurement_id = int(request.match_info['procurement_id'])
-        token = request.query.get('token')
+        procurement_id = int(request.match_info["procurement_id"])
+        token = request.query.get("token")
 
         # Authenticate user
         user_id = await self.authenticate_user(token)
         if not user_id:
-            await ws.close(code=1008, message=b'Unauthorized')
+            await ws.close(code=1008, message=b"Unauthorized")
             return ws
 
         # Check access to procurement
         has_access = await self.check_procurement_access(user_id, procurement_id)
         if not has_access:
-            await ws.close(code=1008, message=b'No access to procurement')
+            await ws.close(code=1008, message=b"No access to procurement")
             return ws
 
         # Register connection
@@ -88,9 +90,7 @@ class ChatServer:
 
             # Notify about connection
             await self.broadcast_system_message(
-                procurement_id,
-                f"User {user_id} joined the chat",
-                exclude_ws=ws
+                procurement_id, f"User {user_id} joined the chat", exclude_ws=ws
             )
 
             # Handle incoming messages
@@ -101,7 +101,7 @@ class ChatServer:
                     # Client is alive — reset the missed-pong counter
                     self._missed_pongs[ws] = 0
                 elif msg.type == aiohttp.WSMsgType.ERROR:
-                    logger.error(f'WebSocket error: {ws.exception()}')
+                    logger.error(f"WebSocket error: {ws.exception()}")
 
         except Exception as e:
             logger.error(f"WebSocket handler error: {e}")
@@ -111,8 +111,7 @@ class ChatServer:
 
             # Notify about disconnection
             await self.broadcast_system_message(
-                procurement_id,
-                f"User {user_id} left the chat"
+                procurement_id, f"User {user_id} left the chat"
             )
 
         return ws
@@ -123,8 +122,8 @@ class ChatServer:
             return None
 
         try:
-            payload = jwt.decode(token, self.jwt_secret, algorithms=['HS256'])
-            return payload.get('user_id')
+            payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+            return payload.get("user_id")
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid token: {e}")
             return None
@@ -134,8 +133,8 @@ class ChatServer:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f'{self.core_api_url}/procurements/{procurement_id}/check_access/',
-                    json={'user_id': user_id}
+                    f"{self.core_api_url}/procurements/{procurement_id}/check_access/",
+                    json={"user_id": user_id},
                 ) as response:
                     return response.status == 200
         except Exception as e:
@@ -163,7 +162,7 @@ class ChatServer:
                             f"No pong from user {getattr(ws, 'user_id', '?')} in "
                             f"chat {procurement_id} after {self.MAX_MISSED_PONGS} pings — closing."
                         )
-                        await ws.close(code=1001, message=b'Ping timeout')
+                        await ws.close(code=1001, message=b"Ping timeout")
                         break
                 except Exception as e:
                     logger.debug(f"Heartbeat ping failed: {e}")
@@ -172,10 +171,7 @@ class ChatServer:
             pass
 
     async def register_connection(
-        self,
-        procurement_id: int,
-        ws: web.WebSocketResponse,
-        user_id: int
+        self, procurement_id: int, ws: web.WebSocketResponse, user_id: int
     ):
         """Register a new WebSocket connection"""
         if procurement_id not in self.connections:
@@ -192,10 +188,7 @@ class ChatServer:
         logger.info(f"User {user_id} connected to chat {procurement_id}")
 
     async def unregister_connection(
-        self,
-        procurement_id: int,
-        ws: web.WebSocketResponse,
-        user_id: int
+        self, procurement_id: int, ws: web.WebSocketResponse, user_id: int
     ):
         """Remove a WebSocket connection"""
         if procurement_id in self.connections:
@@ -210,9 +203,7 @@ class ChatServer:
         logger.info(f"User {user_id} disconnected from chat {procurement_id}")
 
     async def send_message_history(
-        self,
-        procurement_id: int,
-        ws: web.WebSocketResponse
+        self, procurement_id: int, ws: web.WebSocketResponse
     ):
         """Send message history to a new connection"""
         if procurement_id in self.message_history:
@@ -229,25 +220,25 @@ class ChatServer:
         procurement_id: int,
         user_id: int,
         message_data: str,
-        sender_ws: web.WebSocketResponse
+        sender_ws: web.WebSocketResponse,
     ):
         """Handle incoming message from client"""
         try:
             data = json.loads(message_data)
-            message_type = data.get('type', 'message')
+            message_type = data.get("type", "message")
 
-            if message_type == 'message':
-                text = data.get('text', '').strip()
+            if message_type == "message":
+                text = data.get("text", "").strip()
                 if not text:
                     return
 
                 # Create message object
                 message = {
-                    'type': 'message',
-                    'user_id': user_id,
-                    'text': text,
-                    'timestamp': datetime.now().isoformat(),
-                    'message_id': f"{user_id}_{datetime.now().timestamp()}"
+                    "type": "message",
+                    "user_id": user_id,
+                    "text": text,
+                    "timestamp": datetime.now().isoformat(),
+                    "message_id": f"{user_id}_{datetime.now().timestamp()}",
                 }
 
                 # Save to history
@@ -261,17 +252,15 @@ class ChatServer:
                 # Save to database via API
                 await self.save_message_to_db(procurement_id, user_id, text)
 
-            elif message_type == 'typing':
+            elif message_type == "typing":
                 # Broadcast typing indicator
                 typing_msg = {
-                    'type': 'typing',
-                    'user_id': user_id,
-                    'is_typing': data.get('is_typing', False)
+                    "type": "typing",
+                    "user_id": user_id,
+                    "is_typing": data.get("is_typing", False),
                 }
                 await self.broadcast_message(
-                    procurement_id,
-                    typing_msg,
-                    exclude_ws=sender_ws
+                    procurement_id, typing_msg, exclude_ws=sender_ws
                 )
 
         except json.JSONDecodeError:
@@ -283,7 +272,7 @@ class ChatServer:
         self,
         procurement_id: int,
         message: dict,
-        exclude_ws: web.WebSocketResponse = None
+        exclude_ws: web.WebSocketResponse = None,
     ):
         """Broadcast message to all connections in a chat"""
         if procurement_id not in self.connections:
@@ -303,35 +292,27 @@ class ChatServer:
                 self.connections[procurement_id].discard(ws)
 
     async def broadcast_system_message(
-        self,
-        procurement_id: int,
-        text: str,
-        exclude_ws: web.WebSocketResponse = None
+        self, procurement_id: int, text: str, exclude_ws: web.WebSocketResponse = None
     ):
         """Broadcast system message"""
         system_message = {
-            'type': 'system',
-            'text': text,
-            'timestamp': datetime.now().isoformat()
+            "type": "system",
+            "text": text,
+            "timestamp": datetime.now().isoformat(),
         }
         await self.broadcast_message(procurement_id, system_message, exclude_ws)
 
-    async def save_message_to_db(
-        self,
-        procurement_id: int,
-        user_id: int,
-        text: str
-    ):
+    async def save_message_to_db(self, procurement_id: int, user_id: int, text: str):
         """Save message to database via Core API"""
         try:
             async with aiohttp.ClientSession() as session:
                 await session.post(
-                    f'{self.core_api_url}/chat/messages/',
+                    f"{self.core_api_url}/chat/messages/",
                     json={
-                        'procurement_id': procurement_id,
-                        'user_id': user_id,
-                        'text': text
-                    }
+                        "procurement_id": procurement_id,
+                        "user_id": user_id,
+                        "text": text,
+                    },
                 )
         except Exception as e:
             logger.error(f"Failed to save message to DB: {e}")
@@ -351,14 +332,14 @@ class ChatServer:
 
 async def main():
     """Main entry point"""
-    host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', 8765))
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8765))
 
     server = ChatServer(host, port)
     await server.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
