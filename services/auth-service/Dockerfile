@@ -12,4 +12,4 @@ EXPOSE 4001
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=30s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4001/health').read()"
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4001"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4001"]
