@@ -44,7 +44,8 @@ version: "3.9"
 #   purchase-service 64M | payment-service 32M | chat-service 32M
 #   notification-service 48M | analytics-service 256M | search-service 32M
 #   reputation-service 48M
-#   Total ≈ 3126 MB
+#   loki 192M | promtail 96M | grafana 192M (log aggregation, issue #244)
+#   Total ≈ 3606 MB (raise host memory or trim limits if running on <4GB)
 ##############################################################################
 
 networks:
@@ -58,6 +59,8 @@ volumes:
   zookeeper_data:
   letsencrypt_data:
   certbot_webroot:
+  loki_data:
+  grafana_data:
 
 services:
   # ── Infrastructure ─────────────────────────────────────────────────────────
@@ -227,7 +230,11 @@ services:
     container_name: groupbuy-django-admin
     restart: on-failure:3
     environment:
-      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
+      # Django keeps its own schema in django_admin_db to avoid colliding with
+      # core-fastapi's users.id (UUID) vs Django's users.id (INTEGER) on the
+      # shared groupbuy database — see issue #244. init-databases.sh provisions
+      # django_admin_db on first postgres init.
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DJANGO_DB_NAME:-django_admin_db}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
       - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
       - DEBUG=False
@@ -801,3 +808,89 @@ services:
       resources:
         limits:
           memory: 48M
+
+  # ── Log aggregation (Grafana + Loki + Promtail) ────────────────────────────
+  #
+  # Issue #244 — operators need to view logs without docker exec.
+  #
+  # Promtail tails every container's stdout/stderr via the Docker socket and
+  # ships logs to Loki. Grafana queries Loki and renders a UI at
+  # http://<host>:3001 (login: admin / GRAFANA_ADMIN_PASSWORD).
+  #
+  # Start with the existing unified stack — no extra flags required:
+  #   docker compose -f docker-compose.unified.yml up -d
+  # Open Grafana, then "Explore → Loki" and run:
+  #   {container="groupbuy-core"}
+  # to inspect any service's logs in real time.
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: groupbuy-loki
+    restart: on-failure:3
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: groupbuy-promtail
+    restart: on-failure:3
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - ./monitoring/loki/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: groupbuy-grafana
+    restart: on-failure:3
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Disable telemetry/anonymous usage stats to keep the container quiet.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - groupbuy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 192M
