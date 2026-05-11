@@ -553,7 +553,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
       JWT_EXPIRES_IN: 15m
+      JWT_EXPIRES_IN_SECONDS: 900
       JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_REFRESH_EXPIRES_IN_SECONDS: 604800
       BCRYPT_ROUNDS: 10
       NOTIFICATION_SERVICE_URL: http://notification-service:4005
       CORE_API_URL: http://core:8000
