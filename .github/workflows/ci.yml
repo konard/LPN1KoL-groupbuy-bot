@@ -83,7 +83,8 @@ jobs:
             tests/test_issue_222_frontend_auth_compose.py \
             tests/test_issue_226_unified_image_prefix.py \
             tests/test_issue_224_register_endpoint.py \
-            tests/test_issue_236_unified_fastapi_stack.py
+            tests/test_issue_236_unified_fastapi_stack.py \
+            tests/test_issue_242_purchase_migrations.py
 
   # Build and test Rust backend
   rust-build:

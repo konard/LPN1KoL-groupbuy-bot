@@ -3,7 +3,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 from aiokafka import AIOKafkaProducer
@@ -25,62 +25,10 @@ CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 _pool: asyncpg.Pool | None = None
 _producer: AIOKafkaProducer | None = None
 
-MIGRATIONS = """
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-DO $$ BEGIN
-    CREATE TYPE purchase_status AS ENUM ('draft','open','voting','closed','cancelled');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-    CREATE TYPE vote_status AS ENUM ('active','closed','tie');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-CREATE TABLE IF NOT EXISTS purchases (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organizer_id  UUID NOT NULL,
-    title         TEXT NOT NULL,
-    description   TEXT,
-    category      TEXT,
-    status        purchase_status NOT NULL DEFAULT 'draft',
-    min_quantity  INT NOT NULL DEFAULT 1,
-    commission_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS voting_sessions (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    purchase_id  UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-    status       vote_status NOT NULL DEFAULT 'active',
-    winner_id    UUID,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    closed_at    TIMESTAMPTZ
-);
-
-CREATE TABLE IF NOT EXISTS candidates (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id   UUID NOT NULL REFERENCES voting_sessions(id) ON DELETE CASCADE,
-    supplier_id  UUID NOT NULL,
-    price        BIGINT NOT NULL,
-    description  TEXT,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS votes (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id   UUID NOT NULL REFERENCES voting_sessions(id) ON DELETE CASCADE,
-    user_id      UUID NOT NULL,
-    candidate_id UUID NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(session_id, user_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_purchases_organizer ON purchases(organizer_id);
-CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases(status);
-CREATE INDEX IF NOT EXISTS idx_votes_session ON votes(session_id);
-"""
+# Schema is provisioned by entrypoint.sh via SQL files in /app/migrations/.
+# Keeping migrations in a single source of truth prevents schema drift between
+# the file-based migrations (which use `voting_session_id`, `commission_percent`,
+# `min_participants`, etc.) and any inline SQL run at application startup.
 
 
 async def _publish(topic: str, payload: dict) -> None:
@@ -96,8 +44,6 @@ async def _publish(topic: str, payload: dict) -> None:
 async def lifespan(app: FastAPI):
     global _pool, _producer
     _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
-    async with _pool.acquire() as conn:
-        await conn.execute(MIGRATIONS)
 
     _producer = AIOKafkaProducer(
         bootstrap_servers=KAFKA_BROKERS,
@@ -151,8 +97,8 @@ class CreatePurchaseRequest(BaseModel):
 
 
 class AddCandidateRequest(BaseModel):
-    supplierId: str
-    price: int
+    supplierName: str
+    price: float
     description: str | None = None
 
 
@@ -174,7 +120,7 @@ async def create_purchase(
     pool: asyncpg.Pool = Depends(get_pool),
 ):
     pid = await pool.fetchval(
-        """INSERT INTO purchases(organizer_id, title, description, category, min_quantity, commission_pct)
+        """INSERT INTO purchases(organizer_id, title, description, category, min_participants, commission_percent)
            VALUES($1,$2,$3,$4,$5,$6) RETURNING id""",
         uuid.UUID(user_id), body.title, body.description, body.category,
         body.minQuantity, body.commissionPct,
@@ -189,7 +135,7 @@ async def create_purchase(
 @app.get("/purchases")
 async def list_purchases(pool: asyncpg.Pool = Depends(get_pool)):
     rows = await pool.fetch(
-        "SELECT id, organizer_id, title, description, category, status, min_quantity, commission_pct, created_at FROM purchases ORDER BY created_at DESC LIMIT 100"
+        "SELECT id, organizer_id, title, description, category, status, min_participants, commission_percent, created_at FROM purchases ORDER BY created_at DESC LIMIT 100"
     )
     return {"success": True, "data": [dict(r) | {"id": str(r["id"]), "organizer_id": str(r["organizer_id"])} for r in rows]}
 
@@ -214,8 +160,10 @@ async def start_voting(
     if str(row["organizer_id"]) != user_id:
         raise HTTPException(status_code=403, detail="Only organizer can start voting")
 
+    closes_at = datetime.now(timezone.utc) + timedelta(hours=24)
     session_id = await pool.fetchval(
-        "INSERT INTO voting_sessions(purchase_id) VALUES($1) RETURNING id", uuid.UUID(purchase_id)
+        "INSERT INTO voting_sessions(purchase_id, closes_at) VALUES($1, $2) RETURNING id",
+        uuid.UUID(purchase_id), closes_at,
     )
     await pool.execute("UPDATE purchases SET status='voting', updated_at=now() WHERE id=$1", uuid.UUID(purchase_id))
     await _publish("purchase.voting.started", {
@@ -230,11 +178,13 @@ async def add_candidate(
     purchase_id: str,
     session_id: str,
     body: AddCandidateRequest,
+    user_id: str = Depends(_user_id),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
     cid = await pool.fetchval(
-        "INSERT INTO candidates(session_id, supplier_id, price, description) VALUES($1,$2,$3,$4) RETURNING id",
-        uuid.UUID(session_id), uuid.UUID(body.supplierId), body.price, body.description,
+        """INSERT INTO candidates(voting_session_id, supplier_name, price_per_unit, description, proposed_by)
+           VALUES($1,$2,$3,$4,$5) RETURNING id""",
+        uuid.UUID(session_id), body.supplierName, body.price, body.description, uuid.UUID(user_id),
     )
     await _publish("purchase.candidate.added", {
         "purchaseId": purchase_id, "sessionId": session_id,
@@ -253,12 +203,12 @@ async def cast_vote(
 ):
     try:
         await pool.execute(
-            "INSERT INTO votes(session_id, user_id, candidate_id) VALUES($1,$2,$3)",
+            "INSERT INTO votes(voting_session_id, user_id, candidate_id) VALUES($1,$2,$3)",
             uuid.UUID(session_id), uuid.UUID(user_id), uuid.UUID(body.candidateId),
         )
     except asyncpg.UniqueViolationError:
         await pool.execute(
-            "UPDATE votes SET candidate_id=$1 WHERE session_id=$2 AND user_id=$3",
+            "UPDATE votes SET candidate_id=$1 WHERE voting_session_id=$2 AND user_id=$3",
             uuid.UUID(body.candidateId), uuid.UUID(session_id), uuid.UUID(user_id),
         )
         await _publish("purchase.vote.changed", {
@@ -268,7 +218,9 @@ async def cast_vote(
         })
         return {"success": True, "action": "changed"}
 
-    total_votes = await pool.fetchval("SELECT COUNT(*) FROM votes WHERE session_id=$1", uuid.UUID(session_id))
+    total_votes = await pool.fetchval(
+        "SELECT COUNT(*) FROM votes WHERE voting_session_id=$1", uuid.UUID(session_id)
+    )
     await _publish("purchase.vote.cast", {
         "purchaseId": purchase_id, "sessionId": session_id,
         "userId": user_id, "candidateId": body.candidateId,
@@ -285,7 +237,7 @@ async def close_voting(
     pool: asyncpg.Pool = Depends(get_pool),
 ):
     rows = await pool.fetch(
-        "SELECT candidate_id, COUNT(*) as cnt FROM votes WHERE session_id=$1 GROUP BY candidate_id ORDER BY cnt DESC",
+        "SELECT candidate_id, COUNT(*) as cnt FROM votes WHERE voting_session_id=$1 GROUP BY candidate_id ORDER BY cnt DESC",
         uuid.UUID(session_id),
     )
 
@@ -301,17 +253,17 @@ async def close_voting(
     is_tie = len(rows) > 1 and rows[0]["cnt"] == rows[1]["cnt"]
 
     await pool.execute(
-        "UPDATE voting_sessions SET status=$1, winner_id=$2, closed_at=now() WHERE id=$3",
-        "tie" if is_tie else "closed", uuid.UUID(winner_id), uuid.UUID(session_id),
+        "UPDATE voting_sessions SET status='closed', winner_candidate_id=$1 WHERE id=$2",
+        uuid.UUID(winner_id), uuid.UUID(session_id),
     )
 
     event = "purchase.voting.tie" if is_tie else "purchase.voting.closed"
     await _publish(event, {
         "purchaseId": purchase_id, "sessionId": session_id,
         "winnerId": winner_id, "totalVotes": total_votes,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "isTie": is_tie, "ts": datetime.now(timezone.utc).isoformat(),
     })
-    return {"success": True, "winnerId": winner_id, "totalVotes": total_votes}
+    return {"success": True, "winnerId": winner_id, "totalVotes": total_votes, "isTie": is_tie}
 
 
 @app.post("/purchases/{purchase_id}/cancel")
