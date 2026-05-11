@@ -9,4 +9,7 @@ COPY . .
 
 EXPOSE 4004
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4004"]
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=30s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4004/health').read()"
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4004"]

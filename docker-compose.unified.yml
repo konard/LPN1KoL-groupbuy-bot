@@ -3,10 +3,9 @@ version: "3.9"
 ##############################################################################
 # docker-compose.unified.yml — all-in-one production + microservices stack
 #
-# Combines docker-compose.prod.yml (main app: core API, Django admin, bot,
-# frontend, nginx, certbot) with docker-compose.light.yml (Python/FastAPI
-# services: gateway, auth, purchase, payment, chat, notification, analytics,
-# search, reputation) into a single file.
+# Combines the Python/FastAPI core, bot/adapters, frontend, nginx/certbot, and
+# Python/FastAPI microservices (gateway, auth, purchase, payment, chat,
+# notification, analytics, search, reputation) into a single file.
 #
 # Infrastructure (postgres, redis, kafka, zookeeper, centrifugo) is shared
 # by all services in this file.
@@ -269,14 +268,16 @@ services:
   core:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-lpn1kol/groupbuy-bot}/core:${IMAGE_TAG:-main}
     build:
-      context: ./core-rust
+      context: ./core-fastapi
     container_name: groupbuy-core
     restart: on-failure:3
     environment:
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-groupbuy}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
       - PORT=8000
-      - RUST_LOG=${RUST_LOG:-info,groupbuy_api=info}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
     depends_on:
       postgres:
         condition: service_healthy
@@ -285,8 +286,6 @@ services:
     networks:
       - groupbuy-network
     healthcheck:
-      # The Rust binary retries DB connection up to 10 times × 3s = 30s, then runs
-      # migrations before the HTTP server starts.  Give it 90s before failures count.
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
@@ -520,6 +519,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
       RATE_LIMIT_RPM: "60"
       VOTING_RATE_LIMIT_RPM: "120"
+      UPSTREAM_TIMEOUT_SECONDS: ${GATEWAY_UPSTREAM_TIMEOUT_SECONDS:-30}
+      UPSTREAM_RETRIES: ${GATEWAY_UPSTREAM_RETRIES:-2}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
     depends_on:
       redis:
@@ -597,6 +598,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4002/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -622,6 +629,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4003/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -649,6 +662,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4004/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -683,6 +702,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4005/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -736,6 +761,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4007/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -758,6 +789,12 @@ services:
         condition: service_healthy
     networks:
       - groupbuy-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4008/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:

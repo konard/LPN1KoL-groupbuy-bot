@@ -1,22 +1,54 @@
 # GroupBuy Bot v4.0
 
-A scalable microservices platform for organizing group purchases, supporting 10M+ users across Telegram, WhatsApp, and WebSocket-based chat.
+A scalable Python + FastAPI microservices platform for organizing group purchases, supporting Telegram, Mattermost, VK, and WebSocket-based chat.
 
 ## Architecture (v4.0)
 
-| Service | Technology | Purpose |
-|---------|-----------|---------|
-| Gateway | Go (gorilla/mux) | API routing, rate limiting, JWT, CORS |
-| Auth | NestJS | JWT auth, 2FA (TOTP), registration |
-| Purchase | NestJS + Kafka | Purchases, voting, commission, sagas |
-| Payment | Go | Wallets, holds, escrow, commission |
-| Chat | Go + Centrifugo | WebSocket chat, message history |
-| Analytics | Python (FastAPI) | Reports, ML recommendations |
-| Notification | Node.js | Push, email, Telegram/WhatsApp bots |
-| Search | Go + Elasticsearch | Fuzzy search, saved filters |
-| Reputation | NestJS | Reviews, ratings, arbitration |
+The unified deployment is now built from local Python + FastAPI services with `/health` readiness endpoints and environment-driven configuration.
 
-Key features: organizer commission (0-10%), escrow for large purchases, 2FA, auto-rollback (Argo Rollouts), smart search with typo tolerance, reputation system with auto-blocking.
+| Service | Directory | Purpose | Port |
+|---------|-----------|---------|------|
+| Core API | `core-fastapi/` | Legacy `/api/*` user, procurement, payment, chat, news, poll, supplier, and invitation APIs | 8000 |
+| Gateway | `services/gateway/` | API routing, JWT validation, rate limiting, CORS, legacy auth aliases | 3000 |
+| Auth | `services/auth-service/` | Phone/email OTP registration, login, refresh, logout, token validation | 4001 |
+| Purchase | `services/purchase-service/` | Purchases, participants, voting, invitations, Kafka events | 4002 |
+| Payment | `services/payment-service/` | Wallets, transactions, holds, escrow, commissions, payment webhooks | 4003 |
+| Chat | `services/chat-service/` | Rooms, messages, media metadata, Centrifugo publish integration | 4004 |
+| Notification | `services/notification-service/` | Email OTP, push events, Telegram/WhatsApp notification dispatch | 4005 |
+| Analytics | `services/analytics-service/` | Event aggregation, CSV/XLSX reports, S3-compatible report storage | 4006 |
+| Search | `services/search-service/` | Purchase indexing/search with Elasticsearch or Redis fallback | 4007 |
+| Reputation | `services/reputation-service/` | Reviews, complaints, reputation scores, auto-blocking signals | 4008 |
+
+Supporting containers provide PostgreSQL, Redis, Kafka/Zookeeper, Centrifugo, the bot/adapters, frontend, nginx, and certbot. The old non-Python runtime path is no longer used by `docker-compose.unified.yml`; the project runs the Python + FastAPI implementation with:
+
+```bash
+docker-compose -f docker-compose.unified.yml up --build
+```
+
+Key features: organizer commission (0-10%), escrow for large purchases, OTP auth, smart search with typo tolerance, reputation system with auto-blocking, and gateway-mediated authorization.
+
+### Unified API Endpoints
+
+| Endpoint | Service |
+|---|---|
+| `GET /health` | Every FastAPI service |
+| `POST /api/v1/auth/register`, `POST /api/v1/auth/login` | Gateway → auth-service |
+| `GET /api/v1/purchases`, `POST /api/v1/purchases` | Gateway → purchase-service |
+| `GET /api/v1/wallets/me`, `POST /webhooks/yookassa/payment` | Gateway → payment-service |
+| `GET /api/v1/chat/rooms`, `POST /api/v1/chat/messages` | Gateway → chat-service |
+| `POST /internal/send-otp` | notification-service |
+| `GET /api/users`, `GET /api/procurements`, `GET /api/payments` | core-fastapi legacy API |
+
+### Core Environment Variables
+
+| Variable | Default | Used By |
+|---|---|---|
+| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | `postgres`, `postgres`, `groupbuy` | PostgreSQL-backed services |
+| `REDIS_PASSWORD` | `redis_secret` | Redis-backed services |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET` | development placeholders | gateway/auth/core |
+| `CORS_ORIGINS` | `*` or localhost defaults | FastAPI services |
+| `TELEGRAM_TOKEN`, `MATTERMOST_*`, `SMTP_*` | empty placeholders | adapters/notification |
+| `STRIPE_SECRET_KEY`, `YOOKASSA_*` | placeholders | payment-service |
 
 See [Deployment Guide](docs/DEPLOYMENT-v4.md) for full setup instructions.
 
@@ -273,7 +305,7 @@ GroupBuy Bot — это многофункциональная платформ�
                                          |
                                          v
 +------------------------------------------------------------------------------------+
-|                             Core API (Django)                                      |
+|                         Core API (Python + FastAPI)                               |
 |                   - Пользователи  - Закупки  - Платежи                             |
 +------------------------------------------------------------------------------------+
                     |                                         |
@@ -284,8 +316,8 @@ GroupBuy Bot — это многофункциональная платформ�
 ```
 
 **Компоненты системы:**
-- **Core Django API** — основная бизнес-логика, REST-эндпоинты
-- **Core Rust (Async)** — обработка WebSocket, функции реального времени
+- **Core FastAPI** — основная бизнес-логика, REST-эндпоинты, совместимый `/api/*` контракт
+- **Gateway FastAPI** — маршрутизация `/api/v1/*`, авторизация, rate limiting, legacy auth aliases
 - **Bot Service** — обработчики команд, FSM, интерактивные клавиатуры
 - **Telegram Adapter** — трансляция протокола для Telegram
 - **VK Adapter** — трансляция протокола для ВКонтакте
@@ -326,7 +358,7 @@ GroupBuy Bot — это многофункциональная платформ�
                                          |
                                          v
 +------------------------------------------------------------------------------------+
-|                             Core API (Django)                                      |
+|                         Core API (Python + FastAPI)                               |
 |                      - Users  - Procurements  - Payments                           |
 +------------------------------------------------------------------------------------+
                     |                                         |
@@ -359,19 +391,16 @@ cp .env.example .env
 # Edit .env with your settings
 ```
 
-3. Start the services (migrations run automatically):
+3. Start the unified Python + FastAPI stack:
 ```bash
-docker-compose up -d
+docker-compose -f docker-compose.unified.yml up --build
 ```
 
-Note: Database migrations are applied automatically when the core service starts.
+Note: FastAPI services expose `/health` endpoints and are checked by compose.
 
-5. Create admin user:
+4. Create an admin user for the admin sidecar when needed:
 ```bash
-# Development:
-docker-compose exec core python manage.py createsuperuser
-# Production:
-docker compose -f docker-compose.prod.yml exec django-admin python manage.py createsuperuser
+docker compose -f docker-compose.unified.yml exec django-admin python manage.py createsuperuser
 ```
 
 ## Development
@@ -381,7 +410,7 @@ docker compose -f docker-compose.prod.yml exec django-admin python manage.py cre
 1. Create virtual environments for each service:
 ```bash
 # Core API
-cd core && python -m venv venv && source venv/bin/activate
+cd core-fastapi && python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 # Bot
@@ -396,9 +425,8 @@ docker-compose up -d postgres redis
 
 3. Run Core API:
 ```bash
-cd core
-python manage.py migrate
-python manage.py runserver
+cd core-fastapi
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 4. Run Bot (in another terminal):
@@ -410,9 +438,8 @@ python main.py
 ### Running Tests
 
 ```bash
-# Core API tests
-cd core
-pytest
+# Core API and compose contract tests
+pytest tests/test_issue_236_unified_fastapi_stack.py
 
 # Bot tests
 cd bot
@@ -479,7 +506,7 @@ docker-compose -f docker-compose.prod.yml up -d
 For servers with limited memory (e.g. 1 GB RAM), use the two-step deployment: first start the microservice infrastructure with `docker-compose.light.yml`, then bring up the application stack with `docker-compose.prod.yml`.
 
 **Why two steps?**  
-`docker-compose.light.yml` starts Kafka, Zookeeper, Centrifugo, and the microservices (gateway, auth, purchase, etc.) with strict memory limits. `docker-compose.prod.yml` starts the main application (core Rust API, Django admin, bot, frontend, nginx). Both files share the same `groupbuy-network` Docker network so all containers can communicate.
+`docker-compose.light.yml` starts Kafka, Zookeeper, Centrifugo, and the FastAPI microservices (gateway, auth, purchase, etc.) with strict memory limits. `docker-compose.prod.yml` starts the main application containers (core API, admin, bot, frontend, nginx). Both files share the same `groupbuy-network` Docker network so all containers can communicate.
 
 **Step 1 — Start infrastructure and microservices:**
 ```bash
@@ -655,15 +682,12 @@ The application includes a full-featured admin panel for managing all aspects of
 
 1. **Create an admin user** (if not already created):
 ```bash
-# Development:
-docker-compose exec core python manage.py createsuperuser
-# Production:
-docker compose -f docker-compose.prod.yml exec django-admin python manage.py createsuperuser
+docker compose -f docker-compose.unified.yml exec django-admin python manage.py createsuperuser
 ```
 
 2. **Access the admin panel** at `/admin-panel/` in your browser
 
-3. **Login** with your Django admin credentials
+3. **Login** with your staff admin credentials
 
 ### Admin Panel Features
 
@@ -706,7 +730,7 @@ docker compose -f docker-compose.prod.yml exec django-admin python manage.py cre
 
 ### Admin Panel Security
 
-- Only Django staff users (is_staff=True) can access the admin panel
+- Only staff users (`is_staff=True`) can access the admin panel
 - Session-based authentication with CSRF protection
 - All admin actions are logged for audit trails
 
@@ -789,7 +813,7 @@ API documentation is available at `/api/docs/` when the server is running.
 | `DB_NAME` | PostgreSQL database name |
 | `DB_USER` | PostgreSQL user |
 | `DB_PASSWORD` | PostgreSQL password |
-| `DJANGO_SECRET_KEY` | Django secret key |
+| `DJANGO_SECRET_KEY` | Admin sidecar secret key |
 | `TOCHKA_API_URL` | Tochka Cyclops API URL |
 | `TOCHKA_NOMINAL_ACCOUNT` | Nominal account number |
 | `TOCHKA_PLATFORM_ID` | Platform ID in Cyclops |
@@ -808,9 +832,9 @@ The CI pipeline runs automatically on:
 
 CI checks include:
 - **Python linting**: Ruff linter and formatter for bot and adapter code
-- **Rust build and tests**: Compilation and unit tests for the core-rust backend
+- **Core and service tests**: Regression coverage for the Python + FastAPI services and compose contracts
 - **WASM build**: Building WebAssembly utilities with wasm-pack
-- **Frontend build**: Node.js build for the React frontend
+- **Frontend build**: Web cabinet build for the React frontend
 - **Docker build**: Validation of all Dockerfile builds
 - **Docker Compose validation**: Syntax check for all compose files
 
@@ -860,8 +884,8 @@ git pull origin main
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 
-# Run migrations (if needed)
-docker compose -f docker-compose.prod.yml exec core python manage.py migrate
+# Run admin-sidecar migrations (if needed)
+docker compose -f docker-compose.prod.yml exec django-admin python manage.py migrate
 ```
 
 ### Creating a Release
