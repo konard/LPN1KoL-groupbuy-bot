@@ -16,6 +16,39 @@
 
 set -e
 
+# Ensure the django_admin_db database exists before attempting migrations.
+# init-databases.sh only runs on the very first postgres volume creation, so on
+# existing deployments where the volume was provisioned without this database the
+# container would crash at the migration step.  Running a CREATE DATABASE …
+# idempotently here guarantees the database is always present.
+if [ -n "${DATABASE_URL:-}" ]; then
+    # Extract host, port, user, password and database from DATABASE_URL.
+    # Expected format: postgresql://user:pass@host:port/dbname
+    DB_URL_STRIPPED="${DATABASE_URL#postgresql://}"
+    DB_USERPASS="${DB_URL_STRIPPED%%@*}"
+    DB_HOSTPORTDB="${DB_URL_STRIPPED#*@}"
+    DB_USER_ONLY="${DB_USERPASS%%:*}"
+    DB_PASS_ONLY="${DB_USERPASS#*:}"
+    DB_HOST="${DB_HOSTPORTDB%%:*}"
+    DB_PORT_DB="${DB_HOSTPORTDB#*:}"
+    DB_PORT="${DB_PORT_DB%%/*}"
+    DB_NAME="${DB_PORT_DB#*/}"
+
+    echo "==> Ensuring database '${DB_NAME}' exists on ${DB_HOST}:${DB_PORT}..."
+    PGPASSWORD="${DB_PASS_ONLY}" psql \
+        -h "${DB_HOST}" -p "${DB_PORT}" \
+        -U "${DB_USER_ONLY}" \
+        -d postgres \
+        -tc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" \
+        | grep -q 1 || \
+    PGPASSWORD="${DB_PASS_ONLY}" psql \
+        -h "${DB_HOST}" -p "${DB_PORT}" \
+        -U "${DB_USER_ONLY}" \
+        -d postgres \
+        -c "CREATE DATABASE \"${DB_NAME}\""
+    echo "==> Database '${DB_NAME}' is ready."
+fi
+
 echo "==> Generating any pending model migrations..."
 python manage.py makemigrations --noinput
 
