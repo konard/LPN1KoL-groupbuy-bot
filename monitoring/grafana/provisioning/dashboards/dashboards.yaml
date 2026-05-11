@@ -1,0 +1,17 @@
+# Auto-provisioned dashboards — issue #244.
+# Grafana scans /var/lib/grafana/dashboards on startup and reloads every 30s.
+
+apiVersion: 1
+
+providers:
+  - name: groupbuy
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true
