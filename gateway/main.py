@@ -61,8 +61,11 @@ SERVICE_URLS: dict[str, str] = {
 PUBLIC_PATHS: frozenset[str] = frozenset(
     {
         "auth/login",
+        "auth/login/confirm",
         "auth/register",
+        "auth/register/confirm",
         "auth/refresh",
+        "auth/resend-code",
         "auth/forgot-password",
         "auth/reset-password",
     }
@@ -289,6 +292,46 @@ async def auth_me(request: Request) -> Response:
 )
 async def legacy_api_auth_proxy(path: str, request: Request) -> Response:
     """Legacy React alias: `/api/auth/*` reaches auth-service root paths."""
+    return await _proxy_request(request, "auth", path)
+
+
+@app.post(
+    "/api/v1/auth/login/confirm",
+    tags=["Аутентификация"],
+    summary="Подтверждение входа по OTP",
+    description="Подтверждает вход в систему с помощью одноразового кода (OTP).",
+)
+async def auth_login_confirm(request: Request) -> Response:
+    return await _proxy_request(request, "auth", "login/confirm")
+
+
+@app.post(
+    "/api/v1/auth/register/confirm",
+    tags=["Аутентификация"],
+    summary="Подтверждение регистрации по OTP",
+    description="Подтверждает регистрацию с помощью одноразового кода (OTP).",
+)
+async def auth_register_confirm(request: Request) -> Response:
+    return await _proxy_request(request, "auth", "register/confirm")
+
+
+@app.post(
+    "/api/v1/auth/resend-code",
+    tags=["Аутентификация"],
+    summary="Повторная отправка OTP-кода",
+    description="Повторно отправляет одноразовый код подтверждения на телефон пользователя.",
+)
+async def auth_resend_code(request: Request) -> Response:
+    return await _proxy_request(request, "auth", "resend-code")
+
+
+@app.api_route(
+    "/auth/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    include_in_schema=False,
+)
+async def legacy_auth_proxy(path: str, request: Request) -> Response:
+    """Legacy /auth/* alias: nginx forwards bare /auth/login here."""
     return await _proxy_request(request, "auth", path)
 
 
