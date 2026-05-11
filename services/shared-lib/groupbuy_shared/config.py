@@ -9,9 +9,9 @@ class BaseServiceSettings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     database_url: str = Field(default="", alias="DATABASE_URL")
-    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
+    redis_url: str = Field(default="redis://redis:6379", alias="REDIS_URL")
 
-    kafka_brokers: str = Field(default="localhost:9092", alias="KAFKA_BROKERS")
+    kafka_brokers: str = Field(default="kafka:9092", alias="KAFKA_BROKERS")
     kafka_client_id: str = Field(default="groupbuy-service", alias="KAFKA_CLIENT_ID")
     kafka_group_id: str = Field(default="groupbuy-group", alias="KAFKA_GROUP_ID")
 
