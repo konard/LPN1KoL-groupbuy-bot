@@ -31,6 +31,23 @@ async def create_payment(body: CreatePayment, pool=Depends(get_pool)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/", summary="List payments for a user")
+async def list_payments(
+    user_id: UUID | None = Query(default=None),
+    pool=Depends(get_pool),
+):
+    if user_id is not None:
+        rows = await pool.fetch(
+            "SELECT * FROM payments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200",
+            user_id,
+        )
+    else:
+        rows = await pool.fetch(
+            "SELECT * FROM payments ORDER BY created_at DESC LIMIT 200"
+        )
+    return {"results": [dict(r) for r in rows]}
+
+
 @router.get("/{payment_id}/status/", summary="Get payment status")
 async def get_payment_status(payment_id: int, pool=Depends(get_pool)):
     row = await pool.fetchrow("SELECT * FROM payments WHERE id=$1", payment_id)
