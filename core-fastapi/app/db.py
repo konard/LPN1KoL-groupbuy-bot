@@ -13,6 +13,112 @@ _pg_pool: asyncpg.Pool | None = None
 _redis: aioredis.Redis | None = None
 
 MIGRATIONS = [
+    # 000_upgrade_integer_user_ids_to_uuid — idempotent upgrade from the legacy
+    # core-rust schema where users.id was SERIAL (INTEGER).  The block is a
+    # no-op when users.id is already UUID.  Must run before 001_initial so that
+    # the new tables that reference users(id) as UUID can be created successfully.
+    """
+    DO $$
+    DECLARE
+        col_type TEXT;
+    BEGIN
+        SELECT data_type INTO col_type
+        FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'id';
+
+        IF col_type IS NOT NULL AND col_type <> 'uuid' THEN
+            -- Truncate child tables that may exist (using CASCADE clears FK deps).
+            -- Existing integer-keyed rows cannot be mapped to UUIDs.
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
+                TRUNCATE TABLE supplier_document_jobs CASCADE;
+            END IF;
+            TRUNCATE TABLE notifications  CASCADE;
+            TRUNCATE TABLE message_reads  CASCADE;
+            TRUNCATE TABLE transactions   CASCADE;
+            TRUNCATE TABLE payments       CASCADE;
+            TRUNCATE TABLE participants   CASCADE;
+            TRUNCATE TABLE procurements   CASCADE;
+            TRUNCATE TABLE user_sessions  CASCADE;
+            TRUNCATE TABLE users          CASCADE;
+
+            -- Drop FK constraints referencing users(id).
+            ALTER TABLE user_sessions  DROP CONSTRAINT IF EXISTS user_sessions_user_id_fkey;
+            ALTER TABLE procurements   DROP CONSTRAINT IF EXISTS procurements_organizer_id_fkey;
+            ALTER TABLE procurements   DROP CONSTRAINT IF EXISTS procurements_supplier_id_fkey;
+            ALTER TABLE participants   DROP CONSTRAINT IF EXISTS participants_user_id_fkey;
+            ALTER TABLE payments       DROP CONSTRAINT IF EXISTS payments_user_id_fkey;
+            ALTER TABLE transactions   DROP CONSTRAINT IF EXISTS transactions_user_id_fkey;
+            ALTER TABLE chat_messages  DROP CONSTRAINT IF EXISTS chat_messages_user_id_fkey;
+            ALTER TABLE message_reads  DROP CONSTRAINT IF EXISTS message_reads_user_id_fkey;
+            ALTER TABLE notifications  DROP CONSTRAINT IF EXISTS notifications_user_id_fkey;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
+                ALTER TABLE supplier_document_jobs DROP CONSTRAINT IF EXISTS supplier_document_jobs_organizer_id_fkey;
+            END IF;
+
+            -- Change users.id from INTEGER to UUID.
+            ALTER TABLE users DROP COLUMN id;
+            ALTER TABLE users ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_random_uuid();
+
+            -- Change child FK columns from INTEGER to UUID.
+            ALTER TABLE user_sessions  ALTER COLUMN user_id      TYPE UUID USING NULL;
+            ALTER TABLE procurements   ALTER COLUMN organizer_id  TYPE UUID USING NULL;
+            ALTER TABLE procurements   ALTER COLUMN supplier_id   TYPE UUID USING NULL;
+            ALTER TABLE participants   ALTER COLUMN user_id       TYPE UUID USING NULL;
+            ALTER TABLE payments       ALTER COLUMN user_id       TYPE UUID USING NULL;
+            ALTER TABLE transactions   ALTER COLUMN user_id       TYPE UUID USING NULL;
+            ALTER TABLE chat_messages  ALTER COLUMN user_id       TYPE UUID USING NULL;
+            ALTER TABLE message_reads  ALTER COLUMN user_id       TYPE UUID USING NULL;
+            ALTER TABLE notifications  ALTER COLUMN user_id       TYPE UUID USING NULL;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
+                ALTER TABLE supplier_document_jobs ALTER COLUMN organizer_id TYPE UUID USING NULL;
+            END IF;
+
+            -- Restore NOT NULL constraints.
+            ALTER TABLE user_sessions  ALTER COLUMN user_id      SET NOT NULL;
+            ALTER TABLE procurements   ALTER COLUMN organizer_id  SET NOT NULL;
+            ALTER TABLE participants   ALTER COLUMN user_id       SET NOT NULL;
+            ALTER TABLE payments       ALTER COLUMN user_id       SET NOT NULL;
+            ALTER TABLE transactions   ALTER COLUMN user_id       SET NOT NULL;
+            ALTER TABLE message_reads  ALTER COLUMN user_id       SET NOT NULL;
+            ALTER TABLE notifications  ALTER COLUMN user_id       SET NOT NULL;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
+                ALTER TABLE supplier_document_jobs ALTER COLUMN organizer_id SET NOT NULL;
+            END IF;
+
+            -- Restore FK constraints.
+            ALTER TABLE user_sessions  ADD CONSTRAINT user_sessions_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            ALTER TABLE procurements   ADD CONSTRAINT procurements_organizer_id_fkey
+                FOREIGN KEY (organizer_id) REFERENCES users(id) ON DELETE CASCADE;
+            ALTER TABLE procurements   ADD CONSTRAINT procurements_supplier_id_fkey
+                FOREIGN KEY (supplier_id) REFERENCES users(id) ON DELETE SET NULL;
+            ALTER TABLE participants   ADD CONSTRAINT participants_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            ALTER TABLE payments       ADD CONSTRAINT payments_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            ALTER TABLE transactions   ADD CONSTRAINT transactions_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            ALTER TABLE chat_messages  ADD CONSTRAINT chat_messages_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+            ALTER TABLE message_reads  ADD CONSTRAINT message_reads_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            ALTER TABLE notifications  ADD CONSTRAINT notifications_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
+                ALTER TABLE supplier_document_jobs ADD CONSTRAINT supplier_document_jobs_organizer_id_fkey
+                    FOREIGN KEY (organizer_id) REFERENCES users(id) ON DELETE CASCADE;
+            END IF;
+        END IF;
+    END $$;
+
+    -- Add is_banned column introduced in core-fastapi if the table exists but lacks it.
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE;
+        END IF;
+    END $$;
+    """,
     # 001_initial
     """
     CREATE TABLE IF NOT EXISTS users (
