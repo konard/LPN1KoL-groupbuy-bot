@@ -14,52 +14,78 @@ _redis: aioredis.Redis | None = None
 
 MIGRATIONS = [
     # 000_upgrade_integer_user_ids_to_uuid — idempotent upgrade from the legacy
-    # core-rust schema where users.id was SERIAL (INTEGER).  The block is a
-    # no-op when users.id is already UUID.  Must run before 001_initial so that
-    # the new tables that reference users(id) as UUID can be created successfully.
+    # core-rust / core-django schema where users.id was SERIAL (INTEGER).  The
+    # block is a no-op when users.id is already UUID.  Must run before
+    # 001_initial so that the new tables that reference users(id) as UUID can be
+    # created successfully.
+    #
+    # FK constraints referencing users.id are discovered dynamically from
+    # pg_constraint so that Django-generated constraint names like
+    # supplier_votes_voter_id_2e8acc32_fk_users_id (created by tables that this
+    # service does not own) are dropped along with the constraints created by
+    # core-rust / core-fastapi.  After the column is recreated as UUID, the FKs
+    # owned by core-fastapi are restored; FKs owned by other services (Django)
+    # are left for the owning service to recreate.
     """
     DO $$
     DECLARE
         col_type TEXT;
+        fk RECORD;
     BEGIN
         SELECT data_type INTO col_type
         FROM information_schema.columns
         WHERE table_name = 'users' AND column_name = 'id';
 
         IF col_type IS NOT NULL AND col_type <> 'uuid' THEN
-            -- Truncate child tables that may exist (using CASCADE clears FK deps).
-            -- Existing integer-keyed rows cannot be mapped to UUIDs.
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
-                TRUNCATE TABLE supplier_document_jobs CASCADE;
-            END IF;
-            TRUNCATE TABLE notifications  CASCADE;
-            TRUNCATE TABLE message_reads  CASCADE;
-            TRUNCATE TABLE transactions   CASCADE;
-            TRUNCATE TABLE payments       CASCADE;
-            TRUNCATE TABLE participants   CASCADE;
-            TRUNCATE TABLE procurements   CASCADE;
-            TRUNCATE TABLE user_sessions  CASCADE;
-            TRUNCATE TABLE users          CASCADE;
+            -- Truncate (with CASCADE) every table that has an FK referencing
+            -- users.id.  Existing INTEGER user IDs cannot be reinterpreted as
+            -- UUIDs, so child rows must be discarded.  Done BEFORE the FK
+            -- constraints are dropped so TRUNCATE … CASCADE can follow them
+            -- and clear every downstream table in one pass.
+            FOR fk IN
+                SELECT DISTINCT
+                       cls.relname AS table_name,
+                       nsp.nspname AS schema_name
+                FROM pg_constraint  con
+                JOIN pg_class       cls ON cls.oid = con.conrelid
+                JOIN pg_namespace   nsp ON nsp.oid = cls.relnamespace
+                JOIN pg_class       ref ON ref.oid = con.confrelid
+                WHERE con.contype = 'f'
+                  AND ref.relname = 'users'
+            LOOP
+                EXECUTE format(
+                    'TRUNCATE TABLE %I.%I CASCADE',
+                    fk.schema_name, fk.table_name
+                );
+            END LOOP;
+            TRUNCATE TABLE users CASCADE;
 
-            -- Drop FK constraints referencing users(id).
-            ALTER TABLE user_sessions  DROP CONSTRAINT IF EXISTS user_sessions_user_id_fkey;
-            ALTER TABLE procurements   DROP CONSTRAINT IF EXISTS procurements_organizer_id_fkey;
-            ALTER TABLE procurements   DROP CONSTRAINT IF EXISTS procurements_supplier_id_fkey;
-            ALTER TABLE participants   DROP CONSTRAINT IF EXISTS participants_user_id_fkey;
-            ALTER TABLE payments       DROP CONSTRAINT IF EXISTS payments_user_id_fkey;
-            ALTER TABLE transactions   DROP CONSTRAINT IF EXISTS transactions_user_id_fkey;
-            ALTER TABLE chat_messages  DROP CONSTRAINT IF EXISTS chat_messages_user_id_fkey;
-            ALTER TABLE message_reads  DROP CONSTRAINT IF EXISTS message_reads_user_id_fkey;
-            ALTER TABLE notifications  DROP CONSTRAINT IF EXISTS notifications_user_id_fkey;
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
-                ALTER TABLE supplier_document_jobs DROP CONSTRAINT IF EXISTS supplier_document_jobs_organizer_id_fkey;
-            END IF;
+            -- Drop every FK constraint that references users.id, regardless of
+            -- which service created it.  Querying pg_constraint catches both
+            -- core-rust / core-fastapi names (e.g. *_user_id_fkey) and Django's
+            -- hashed names (e.g. supplier_votes_voter_id_2e8acc32_fk_users_id).
+            FOR fk IN
+                SELECT con.conname,
+                       cls.relname AS table_name,
+                       nsp.nspname AS schema_name
+                FROM pg_constraint  con
+                JOIN pg_class       cls ON cls.oid = con.conrelid
+                JOIN pg_namespace   nsp ON nsp.oid = cls.relnamespace
+                JOIN pg_class       ref ON ref.oid = con.confrelid
+                WHERE con.contype = 'f'
+                  AND ref.relname = 'users'
+            LOOP
+                EXECUTE format(
+                    'ALTER TABLE %I.%I DROP CONSTRAINT %I',
+                    fk.schema_name, fk.table_name, fk.conname
+                );
+            END LOOP;
 
             -- Change users.id from INTEGER to UUID.
             ALTER TABLE users DROP COLUMN id;
             ALTER TABLE users ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_random_uuid();
 
-            -- Change child FK columns from INTEGER to UUID.
+            -- Change child FK columns owned by core-fastapi from INTEGER to UUID.
             ALTER TABLE user_sessions  ALTER COLUMN user_id      TYPE UUID USING NULL;
             ALTER TABLE procurements   ALTER COLUMN organizer_id  TYPE UUID USING NULL;
             ALTER TABLE procurements   ALTER COLUMN supplier_id   TYPE UUID USING NULL;
@@ -69,9 +95,6 @@ MIGRATIONS = [
             ALTER TABLE chat_messages  ALTER COLUMN user_id       TYPE UUID USING NULL;
             ALTER TABLE message_reads  ALTER COLUMN user_id       TYPE UUID USING NULL;
             ALTER TABLE notifications  ALTER COLUMN user_id       TYPE UUID USING NULL;
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
-                ALTER TABLE supplier_document_jobs ALTER COLUMN organizer_id TYPE UUID USING NULL;
-            END IF;
 
             -- Restore NOT NULL constraints.
             ALTER TABLE user_sessions  ALTER COLUMN user_id      SET NOT NULL;
@@ -81,11 +104,12 @@ MIGRATIONS = [
             ALTER TABLE transactions   ALTER COLUMN user_id       SET NOT NULL;
             ALTER TABLE message_reads  ALTER COLUMN user_id       SET NOT NULL;
             ALTER TABLE notifications  ALTER COLUMN user_id       SET NOT NULL;
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
-                ALTER TABLE supplier_document_jobs ALTER COLUMN organizer_id SET NOT NULL;
-            END IF;
 
-            -- Restore FK constraints.
+            -- Restore FK constraints owned by core-fastapi.  FKs from tables
+            -- owned by other services (e.g. Django tables like supplier_votes,
+            -- vote_close_requests, supplier_document_jobs) are intentionally
+            -- NOT restored here — their owning service's migrations will
+            -- recreate them with the correct UUID type when next deployed.
             ALTER TABLE user_sessions  ADD CONSTRAINT user_sessions_user_id_fkey
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
             ALTER TABLE procurements   ADD CONSTRAINT procurements_organizer_id_fkey
@@ -104,10 +128,6 @@ MIGRATIONS = [
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
             ALTER TABLE notifications  ADD CONSTRAINT notifications_user_id_fkey
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'supplier_document_jobs') THEN
-                ALTER TABLE supplier_document_jobs ADD CONSTRAINT supplier_document_jobs_organizer_id_fkey
-                    FOREIGN KEY (organizer_id) REFERENCES users(id) ON DELETE CASCADE;
-            END IF;
         END IF;
     END $$;
 
