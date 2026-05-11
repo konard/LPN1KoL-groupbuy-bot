@@ -16,6 +16,10 @@ class HealthResponse(BaseModel):
 # ─── User schemas ─────────────────────────────────────────────────────────────
 
 class CreateUser(BaseModel):
+    # Optional explicit UUID — auth-service uses this to keep its own user.id
+    # in sync with core's users.id, so frontend calls like
+    # /api/users/{auth-uuid}/balance/ resolve without a separate id lookup.
+    id: UUID | None = None
     platform: str | None = "telegram"
     platform_user_id: str
     username: str | None = ""

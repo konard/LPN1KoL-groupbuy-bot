@@ -68,23 +68,68 @@ async def create_user(body: CreateUser, pool=Depends(get_pool)):
     if phone and not phone.startswith("+"):
         phone = f"+{phone}"
 
+    # Idempotent upsert on (platform, platform_user_id): callers like the
+    # auth-service may retry sync after a failure, and re-registering the same
+    # platform user must not raise.  When the caller supplies an explicit id
+    # (e.g. auth-service passes its own UUID), use it as the primary key so
+    # subsequent /api/users/{id}/... calls from the frontend resolve to the
+    # same record.  See issue #256.
     try:
-        row = await pool.fetchrow(
-            """INSERT INTO users
-               (platform, platform_user_id, username, first_name, last_name, phone, email, role, language_code, selfie_file_id, is_banned)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false)
-               RETURNING *""",
-            platform,
-            body.platform_user_id,
-            body.username or "",
-            body.first_name or "",
-            body.last_name or "",
-            phone,
-            body.email or "",
-            role,
-            language_code,
-            body.selfie_file_id or "",
-        )
+        if body.id is not None:
+            row = await pool.fetchrow(
+                """INSERT INTO users
+                   (id, platform, platform_user_id, username, first_name, last_name, phone, email, role, language_code, selfie_file_id, is_banned)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
+                   ON CONFLICT (platform, platform_user_id) DO UPDATE SET
+                     username=EXCLUDED.username,
+                     first_name=EXCLUDED.first_name,
+                     last_name=EXCLUDED.last_name,
+                     phone=EXCLUDED.phone,
+                     email=EXCLUDED.email,
+                     role=EXCLUDED.role,
+                     language_code=EXCLUDED.language_code,
+                     selfie_file_id=EXCLUDED.selfie_file_id,
+                     updated_at=NOW()
+                   RETURNING *""",
+                body.id,
+                platform,
+                body.platform_user_id,
+                body.username or "",
+                body.first_name or "",
+                body.last_name or "",
+                phone,
+                body.email or "",
+                role,
+                language_code,
+                body.selfie_file_id or "",
+            )
+        else:
+            row = await pool.fetchrow(
+                """INSERT INTO users
+                   (platform, platform_user_id, username, first_name, last_name, phone, email, role, language_code, selfie_file_id, is_banned)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false)
+                   ON CONFLICT (platform, platform_user_id) DO UPDATE SET
+                     username=EXCLUDED.username,
+                     first_name=EXCLUDED.first_name,
+                     last_name=EXCLUDED.last_name,
+                     phone=EXCLUDED.phone,
+                     email=EXCLUDED.email,
+                     role=EXCLUDED.role,
+                     language_code=EXCLUDED.language_code,
+                     selfie_file_id=EXCLUDED.selfie_file_id,
+                     updated_at=NOW()
+                   RETURNING *""",
+                platform,
+                body.platform_user_id,
+                body.username or "",
+                body.first_name or "",
+                body.last_name or "",
+                phone,
+                body.email or "",
+                role,
+                language_code,
+                body.selfie_file_id or "",
+            )
         return _row_to_response(dict(row))
     except Exception as e:
         err = str(e)

@@ -18,7 +18,6 @@ Pending sessions and OTP codes are kept in Redis with short TTLs.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -230,8 +229,17 @@ async def _send_otp_email(email: str, otp: str, context: Literal["login", "regis
 
 
 async def _sync_user_to_core(user: dict) -> None:
-    """Best-effort sync to core API so /api/users/by_email/ resolves."""
+    """Sync the auth-service user into core's users table.
+
+    Passes the auth-service id explicitly so that core's users.id matches the
+    auth-service uuid stored in the JWT `sub` claim.  Without this, the
+    frontend's `/api/users/{user.id}/balance/` calls return 404 because it
+    sends the auth-service uuid but core has a different auto-generated uuid
+    for the same person (issue #256).  Core's POST /api/users/ is idempotent
+    (ON CONFLICT DO UPDATE), so retrying the call on every login is safe.
+    """
     body = {
+        "id": str(user["id"]),
         "platform": "websocket",
         "platform_user_id": str(user["id"]),
         "username": user["email"],
@@ -244,7 +252,12 @@ async def _sync_user_to_core(user: dict) -> None:
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(f"{CORE_API_URL}/api/users/", json=body)
+            resp = await client.post(f"{CORE_API_URL}/api/users/", json=body)
+            if resp.status_code >= 400:
+                logger.warning(
+                    "CoreSync HTTP %d for %s: %s",
+                    resp.status_code, user["email"], resp.text,
+                )
     except Exception as exc:
         logger.warning("CoreSync failed for %s: %s", user["email"], exc)
 
@@ -400,7 +413,10 @@ async def confirm_registration(body: ConfirmRegistrationRequest):
         "last_name": row["last_name"],
         "role": row["role"],
     }
-    asyncio.create_task(_sync_user_to_core(user))
+    # Await sync so the frontend's follow-up /api/users/{id}/... calls
+    # always find the user (issue #256).  The helper swallows errors so a
+    # transient core outage does not break registration.
+    await _sync_user_to_core(user)
 
     tokens = await _generate_tokens(str(row["id"]), row["email"], row["role"])
     return {"success": True, "data": tokens}
@@ -474,7 +490,7 @@ async def confirm_login(body: ConfirmLoginRequest):
 
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT id, email, role, is_active, is_banned FROM users WHERE id=$1",
+        "SELECT id, phone, email, first_name, last_name, role, is_active, is_banned FROM users WHERE id=$1",
         uuid.UUID(session["userId"]),
     )
     if not row:
@@ -486,6 +502,19 @@ async def confirm_login(body: ConfirmLoginRequest):
             status_code=403,
             detail={"status": 403, "code": "USER_BANNED", "message": "Your account has been suspended"},
         )
+
+    # Repair stale users registered before issue #256: their core record may
+    # be missing because the original sync was fire-and-forget and could have
+    # failed silently.  Sync is idempotent, so this is a no-op when the user
+    # already exists in core.
+    await _sync_user_to_core({
+        "id": row["id"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "first_name": row["first_name"],
+        "last_name": row["last_name"],
+        "role": row["role"],
+    })
 
     tokens = await _generate_tokens(str(row["id"]), row["email"], row["role"])
     return {"success": True, "data": {"requires2FA": False, **tokens}}

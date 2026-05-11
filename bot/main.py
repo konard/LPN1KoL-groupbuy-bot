@@ -254,8 +254,22 @@ async def main():
             # Keep running
             await asyncio.Event().wait()
         else:
-            # Default: long polling
-            await _bot.delete_webhook(drop_pending_updates=True)
+            # Default: long polling.
+            # delete_webhook may fail when api.telegram.org is unreachable
+            # (e.g. region-blocked without TELEGRAM_USE_PROXY).  Crashing the
+            # container here also takes down the adapter HTTP server on 8001,
+            # so log the error and let start_polling's built-in retry loop
+            # handle reconnects instead — see issue #256.
+            from aiogram.exceptions import TelegramNetworkError
+
+            try:
+                await _bot.delete_webhook(drop_pending_updates=True)
+            except TelegramNetworkError as exc:
+                logger.warning(
+                    "delete_webhook failed (%s) — continuing to polling; "
+                    "aiogram will retry on the next poll cycle.",
+                    exc,
+                )
             await _dp.start_polling(_bot)
     finally:
         await adapter_runner.cleanup()

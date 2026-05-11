@@ -2,10 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies. postgresql-client provides `psql`, which
+# entrypoint.sh uses to create the django_admin_db database before migrations.
+# Without it the container loops with "psql: not found" (see issue #256).
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    postgresql-client \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
