@@ -26,11 +26,11 @@ class BotConfig:
     vk_token: str = os.getenv("VK_TOKEN", "")
 
     # Core API
-    core_api_url: str = os.getenv("CORE_API_URL", "http://localhost:8000/api")
+    core_api_url: str = os.getenv("CORE_API_URL", "http://core:8000/api")
     core_api_timeout: int = 30
 
     # Redis
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+    redis_url: str = os.getenv("REDIS_URL", "redis://redis:6379/1")
 
     # YooKassa (legacy)
     yookassa_shop_id: str = os.getenv("YOOKASSA_SHOP_ID", "")
@@ -38,8 +38,8 @@ class BotConfig:
 
     # JWT and WebSocket
     jwt_secret: str = os.getenv("JWT_SECRET", "dev-jwt-secret")
-    websocket_url: str = os.getenv("WEBSOCKET_URL", "ws://localhost:8765")
-    web_app_url: str = os.getenv("WEB_APP_URL", "http://localhost:3000")
+    websocket_url: str = os.getenv("WEBSOCKET_URL", "ws://websocket-server:8765")
+    web_app_url: str = os.getenv("WEB_APP_URL", "http://gateway:3000")
 
     # Bot mode
     bot_mode: str = os.getenv("BOT_MODE", "polling")  # polling or webhook
