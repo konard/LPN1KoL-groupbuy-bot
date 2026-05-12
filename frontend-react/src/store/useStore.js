@@ -13,7 +13,7 @@ function restoreUserFromToken() {
       id: payload.sub || userId,
       email: payload.email,
       role: payload.role,
-      coreId: coreId ? parseInt(coreId, 10) : null,
+      coreId: coreId || null,
     };
   } catch (_) {
     return null;
