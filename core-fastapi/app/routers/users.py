@@ -107,19 +107,24 @@ async def create_user(body: CreateUser, pool=Depends(get_pool)):
     if phone and not phone.startswith("+"):
         phone = f"+{phone}"
 
-    # Idempotent upsert on (platform, platform_user_id): callers like the
-    # auth-service may retry sync after a failure, and re-registering the same
-    # platform user must not raise.  When the caller supplies an explicit id
-    # (e.g. auth-service passes its own UUID), use it as the primary key so
-    # subsequent /api/users/{id}/... calls from the frontend resolve to the
-    # same record.  See issue #256.
+    # Idempotent upsert: callers like auth-service may retry sync after a
+    # failure, and re-registering the same user must not raise.  When an
+    # explicit id is supplied (e.g. auth-service passes its own UUID), it is
+    # used as the primary key so subsequent /api/users/{id}/... calls from the
+    # frontend resolve to the same record.  Two conflict targets are handled:
+    #   1. ON CONFLICT (id)                     — PK re-sync for the same UUID
+    #   2. ON CONFLICT (platform, platform_user_id) — same platform user
+    # Both update the mutable fields so the record is always up-to-date.
+    # See issues #256 and #262.
     try:
         if body.id is not None:
             row = await pool.fetchrow(
                 """INSERT INTO users
                    (id, platform, platform_user_id, username, first_name, last_name, phone, email, role, language_code, selfie_file_id, is_banned)
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false)
-                   ON CONFLICT (platform, platform_user_id) DO UPDATE SET
+                   ON CONFLICT (id) DO UPDATE SET
+                     platform=EXCLUDED.platform,
+                     platform_user_id=EXCLUDED.platform_user_id,
                      username=EXCLUDED.username,
                      first_name=EXCLUDED.first_name,
                      last_name=EXCLUDED.last_name,
