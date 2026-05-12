@@ -17,7 +17,7 @@ logger = logging.getLogger("chat-service")
 
 PORT = int(os.getenv("PORT", "4004"))
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/chat_db")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 CENTRIFUGO_URL = os.getenv("CENTRIFUGO_URL", "http://centrifugo:8000")
 CENTRIFUGO_API_KEY = os.getenv("CENTRIFUGO_API_KEY", "centrifugo_api_key")
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()] or ["*"]

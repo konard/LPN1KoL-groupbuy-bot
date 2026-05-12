@@ -31,9 +31,9 @@ logger = logging.getLogger("analytics")
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
+KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "analytics-group")
-S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://localhost:9000")
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://minio:9000")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minio_admin")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minio_password")
 S3_BUCKET = os.getenv("S3_BUCKET", "analytics-reports")

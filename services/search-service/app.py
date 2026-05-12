@@ -22,7 +22,7 @@ logger = logging.getLogger("search-service")
 
 PORT = int(os.getenv("PORT", "4007"))
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()] or ["*"]
 CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS

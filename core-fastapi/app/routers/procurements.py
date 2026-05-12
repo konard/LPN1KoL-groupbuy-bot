@@ -180,6 +180,34 @@ async def get_procurement(proc_id: int, pool=Depends(get_pool)):
     return _to_response(dict(row), count)
 
 
+@router.post("/{proc_id}/check_access/", summary="Check if user has access to procurement chat")
+async def check_access(proc_id: int, body: dict, pool=Depends(get_pool)):
+    user_id = (body or {}).get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    try:
+        user_uuid = UUID(str(user_id))
+    except Exception:
+        raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+    row = await pool.fetchrow(
+        "SELECT organizer_id FROM procurements WHERE id=$1", proc_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found.")
+    is_participant = await pool.fetchval(
+        """SELECT EXISTS(
+               SELECT 1 FROM participants
+                WHERE procurement_id=$1 AND user_id=$2 AND is_active=TRUE
+           )""",
+        proc_id, user_uuid,
+    )
+    if row["organizer_id"] == user_uuid or is_participant:
+        return {"access": True}
+    raise HTTPException(
+        status_code=403, detail={"access": False, "error": "No access to this procurement"}
+    )
+
+
 @router.post("/{proc_id}/join/", status_code=201, summary="Join procurement")
 async def join_procurement(proc_id: int, body: JoinProcurement, pool=Depends(get_pool)):
     if body.user_id is None:

@@ -63,6 +63,11 @@ SERVICE_URLS: dict[str, str] = {
     "reputation":    os.getenv("REPUTATION_SERVICE_URL",    "http://reputation-service:4008"),
 }
 
+# Dedicated WebSocket upstream — chat-service exposes only REST routes, so /ws
+# traffic must terminate on the dedicated websocket-server container
+# (see docker-compose.unified.yml ``websocket-server`` on port 8765).
+WEBSOCKET_URL: str = os.getenv("WEBSOCKET_URL", "http://websocket-server:8765")
+
 # Пути под /api/v1, не требующие JWT.
 PUBLIC_PATHS: frozenset[str] = frozenset(
     {
@@ -297,7 +302,7 @@ async def _proxy_request(
 
 
 def _websocket_target(path: str, query: str) -> str:
-    base_url = SERVICE_URLS["chat"].rstrip("/")
+    base_url = WEBSOCKET_URL.rstrip("/")
     if base_url.startswith("https://"):
         base_url = "wss://" + base_url.removeprefix("https://")
     elif base_url.startswith("http://"):

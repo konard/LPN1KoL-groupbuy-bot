@@ -5,13 +5,13 @@ import topLevelAwait from 'vite-plugin-top-level-await';
 
 const gatewayTarget = process.env.VITE_AUTH_PROXY_TARGET
   || process.env.VITE_GATEWAY_URL
-  || 'http://localhost:3001';
+  || 'http://gateway:3000';
 const apiTarget = process.env.VITE_API_PROXY_TARGET
   || process.env.VITE_BACKEND_URL
-  || 'http://localhost:8000';
+  || 'http://core:8000';
 const wsTarget = process.env.VITE_WS_PROXY_TARGET
   || process.env.VITE_BACKEND_WS_URL
-  || 'ws://localhost:8000';
+  || 'ws://websocket-server:8765';
 
 export default defineConfig({
   plugins: [

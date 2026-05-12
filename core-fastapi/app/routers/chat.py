@@ -48,6 +48,33 @@ async def create_message(body: CreateMessage, pool=Depends(get_pool)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/messages/unread_count/", summary="Count unread messages for a user in a procurement")
+async def unread_count(
+    user_id: UUID = Query(...),
+    procurement_id: int = Query(...),
+    pool=Depends(get_pool),
+):
+    last_read = await pool.fetchval(
+        """SELECT last_read_message_id FROM message_reads
+            WHERE user_id=$1 AND procurement_id=$2""",
+        user_id, procurement_id,
+    )
+    if last_read is None:
+        count = await pool.fetchval(
+            """SELECT COUNT(*) FROM chat_messages
+                WHERE procurement_id=$1 AND is_deleted=false AND user_id <> $2""",
+            procurement_id, user_id,
+        ) or 0
+    else:
+        count = await pool.fetchval(
+            """SELECT COUNT(*) FROM chat_messages
+                WHERE procurement_id=$1 AND is_deleted=false
+                  AND id > $2 AND user_id <> $3""",
+            procurement_id, int(last_read), user_id,
+        ) or 0
+    return {"unread_count": int(count)}
+
+
 @router.post("/messages/mark_read/", summary="Mark messages as read")
 async def mark_messages_read(body: dict, pool=Depends(get_pool)):
     user_id_str = body.get("user_id")
