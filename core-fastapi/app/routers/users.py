@@ -8,13 +8,31 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..db import get_pool, get_redis
 from ..schemas import (
-    CreateUser, UpdateUser, UserResponse, UserBalanceResponse,
-    UpdateBalanceRequest, SetSessionState, ClearSessionRequest,
+    BalanceUpdateResponse,
+    ClearSessionRequest,
+    CreateUser,
+    ErrorDetail,
+    ExistsResponse,
+    MessageResponse,
+    SetSessionState,
+    UpdateBalanceRequest,
+    UpdateUser,
+    UserBalanceResponse,
+    UserResponse,
+    UserRoleResponse,
+    WsTokenResponse,
 )
 from ..config import settings
 
 logger = logging.getLogger("core.users")
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["users"],
+    responses={
+        400: {"model": ErrorDetail, "description": "Bad request"},
+        404: {"model": ErrorDetail, "description": "User not found"},
+    },
+)
 
 WS_TOKEN_TTL_SECS = 86400
 
@@ -50,13 +68,34 @@ def _truncate(s: str, max_chars: int) -> str:
     return s[:max_chars] if len(s) > max_chars else s
 
 
-@router.get("/", summary="List all users")
+@router.get(
+    "/",
+    response_model=list[UserResponse],
+    summary="List all users",
+    description=(
+        "Returns every user record sorted by creation time (newest first). "
+        "Used by the admin frontend and integration tests."
+    ),
+    response_description="Array of user records",
+)
 async def list_users(pool=Depends(get_pool)):
     rows = await pool.fetch("SELECT * FROM users ORDER BY created_at DESC")
     return [_row_to_response(dict(r)) for r in rows]
 
 
-@router.post("/", status_code=201, summary="Create user")
+@router.post(
+    "/",
+    response_model=UserResponse,
+    status_code=201,
+    summary="Create or upsert a user",
+    description=(
+        "Idempotent upsert on (`platform`, `platform_user_id`).  Re-syncing the "
+        "same platform user is safe — fields are overwritten on conflict.  When "
+        "`id` is supplied (e.g. by auth-service propagating its own UUID) it is "
+        "used as the primary key so later `/api/users/{id}/…` calls resolve."
+    ),
+    response_description="The created or updated user",
+)
 async def create_user(body: CreateUser, pool=Depends(get_pool)):
     if not body.platform_user_id or not body.platform_user_id.strip():
         raise HTTPException(status_code=400, detail={"platform_user_id": ["Обязательное поле."]})
@@ -138,10 +177,15 @@ async def create_user(body: CreateUser, pool=Depends(get_pool)):
         raise HTTPException(status_code=400, detail=err)
 
 
-@router.get("/by_platform/", summary="Get user by platform")
+@router.get(
+    "/by_platform/",
+    response_model=UserResponse,
+    summary="Get user by platform identity",
+    description="Look up a user by (`platform`, `platform_user_id`).",
+)
 async def get_user_by_platform(
-    platform: str | None = Query(default="telegram"),
-    platform_user_id: str | None = Query(default=None),
+    platform: str | None = Query(default="telegram", description="Platform name (telegram, vk, mattermost…)", examples=["telegram"]),
+    platform_user_id: str | None = Query(default=None, description="Per-platform external user id", examples=["123456789"]),
     pool=Depends(get_pool),
 ):
     if not platform_user_id:
@@ -155,8 +199,16 @@ async def get_user_by_platform(
     return _row_to_response(dict(row))
 
 
-@router.get("/by_email/", summary="Get user by email")
-async def get_user_by_email(email: str | None = Query(default=None), pool=Depends(get_pool)):
+@router.get(
+    "/by_email/",
+    response_model=UserResponse,
+    summary="Get user by email",
+    description="Case-insensitive lookup by email address.",
+)
+async def get_user_by_email(
+    email: str | None = Query(default=None, description="Email address", examples=["user@example.com"]),
+    pool=Depends(get_pool),
+):
     if not email:
         raise HTTPException(status_code=400, detail="email is required")
     row = await pool.fetchrow("SELECT * FROM users WHERE LOWER(email)=LOWER($1)", email)
@@ -165,8 +217,16 @@ async def get_user_by_email(email: str | None = Query(default=None), pool=Depend
     return _row_to_response(dict(row))
 
 
-@router.get("/by_phone/", summary="Get user by phone")
-async def get_user_by_phone(phone: str | None = Query(default=None), pool=Depends(get_pool)):
+@router.get(
+    "/by_phone/",
+    response_model=UserResponse,
+    summary="Get user by phone",
+    description="Lookup by phone number. A leading `+` is added automatically when missing.",
+)
+async def get_user_by_phone(
+    phone: str | None = Query(default=None, description="Phone in E.164 format", examples=["+79991234567"]),
+    pool=Depends(get_pool),
+):
     if not phone:
         raise HTTPException(status_code=400, detail="phone is required")
     if not phone.startswith("+"):
@@ -177,10 +237,16 @@ async def get_user_by_phone(phone: str | None = Query(default=None), pool=Depend
     return _row_to_response(dict(row))
 
 
-@router.get("/check_exists/", summary="Check if user exists")
+@router.get(
+    "/check_exists/",
+    response_model=ExistsResponse,
+    summary="Check if user exists",
+    description="Returns `{exists: true|false}` for the given platform identity. Never 404s.",
+    responses={404: {"description": "Not used by this endpoint"}},
+)
 async def check_user_exists(
-    platform: str | None = Query(default="telegram"),
-    platform_user_id: str | None = Query(default=None),
+    platform: str | None = Query(default="telegram", description="Platform name", examples=["telegram"]),
+    platform_user_id: str | None = Query(default=None, description="Per-platform external user id", examples=["123456789"]),
     pool=Depends(get_pool),
 ):
     if not platform_user_id:
@@ -192,8 +258,20 @@ async def check_user_exists(
     return {"exists": exists}
 
 
-@router.get("/search/", summary="Search users")
-async def search_users(q: str | None = Query(default=None), pool=Depends(get_pool)):
+@router.get(
+    "/search/",
+    response_model=list[UserResponse],
+    summary="Search users",
+    description=(
+        "Case-insensitive `LIKE` search across `first_name`, `last_name`, "
+        "`username`, `email`, and `phone`.  Returns at most 20 records."
+    ),
+    responses={404: {"description": "Not used by this endpoint"}},
+)
+async def search_users(
+    q: str | None = Query(default=None, description="Search query (matches any of the searchable fields)", examples=["ivan"]),
+    pool=Depends(get_pool),
+):
     if not q or not q.strip():
         raise HTTPException(status_code=400, detail="q (search query) is required")
     pattern = f"%{q.strip().lower()}%"
@@ -207,7 +285,15 @@ async def search_users(q: str | None = Query(default=None), pool=Depends(get_poo
     return [_row_to_response(dict(r)) for r in rows]
 
 
-@router.post("/sessions/set_state/", summary="Set session state")
+@router.post(
+    "/sessions/set_state/",
+    summary="Set session state",
+    description=(
+        "Upserts the bot/web dialog state for a user.  `dialog_data` is stored "
+        "as JSONB so any serialisable structure is accepted."
+    ),
+    responses={404: {"description": "Not used by this endpoint"}},
+)
 async def set_session_state(body: SetSessionState, pool=Depends(get_pool)):
     import json
     dialog_data = body.dialog_data if body.dialog_data is not None else {}
@@ -230,13 +316,24 @@ async def set_session_state(body: SetSessionState, pool=Depends(get_pool)):
     return dict(row)
 
 
-@router.post("/sessions/clear_state/", summary="Clear session state")
+@router.post(
+    "/sessions/clear_state/",
+    response_model=MessageResponse,
+    summary="Clear session state",
+    description="Deletes the persisted dialog state for the supplied user. Idempotent.",
+    responses={404: {"description": "Not used by this endpoint"}},
+)
 async def clear_session_state(body: ClearSessionRequest, pool=Depends(get_pool)):
     await pool.execute("DELETE FROM user_sessions WHERE user_id=$1", body.user_id)
     return {"message": "Session cleared"}
 
 
-@router.get("/{user_id}/", summary="Get user by ID")
+@router.get(
+    "/{user_id}/",
+    response_model=UserResponse,
+    summary="Get user by ID",
+    description="Fetch a single user record by its UUID primary key.",
+)
 async def get_user(user_id: UUID, pool=Depends(get_pool)):
     row = await pool.fetchrow("SELECT * FROM users WHERE id=$1", user_id)
     if not row:
@@ -244,8 +341,21 @@ async def get_user(user_id: UUID, pool=Depends(get_pool)):
     return _row_to_response(dict(row))
 
 
-@router.put("/{user_id}/", summary="Update user")
-@router.patch("/{user_id}/", summary="Patch user")
+@router.put(
+    "/{user_id}/",
+    response_model=UserResponse,
+    summary="Replace user fields",
+    description=(
+        "Updates the supplied fields on a user.  Unspecified fields are left "
+        "untouched.  Accepts both PUT and PATCH for client convenience."
+    ),
+)
+@router.patch(
+    "/{user_id}/",
+    response_model=UserResponse,
+    summary="Patch user fields",
+    description="Partial update — see PUT for semantics.",
+)
 async def update_user(user_id: UUID, body: UpdateUser, pool=Depends(get_pool)):
     updates = []
     values = [user_id]
@@ -273,14 +383,32 @@ async def update_user(user_id: UUID, body: UpdateUser, pool=Depends(get_pool)):
     return _row_to_response(dict(row))
 
 
-@router.delete("/{user_id}/", status_code=204, summary="Delete user")
+@router.delete(
+    "/{user_id}/",
+    status_code=204,
+    summary="Delete user",
+    description="Permanently removes a user record. Returns 204 on success.",
+    responses={
+        204: {"description": "User deleted"},
+        400: {"description": "Not used by this endpoint"},
+    },
+)
 async def delete_user(user_id: UUID, pool=Depends(get_pool)):
     result = await pool.execute("DELETE FROM users WHERE id=$1", user_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Not found.")
 
 
-@router.get("/{user_id}/balance/", summary="Get user balance")
+@router.get(
+    "/{user_id}/balance/",
+    response_model=UserBalanceResponse,
+    summary="Get user balance",
+    description=(
+        "Returns the cached `balance` column plus aggregates derived from the "
+        "`transactions` table: total deposited, total spent, and currently "
+        "available funds."
+    ),
+)
 async def get_user_balance(user_id: UUID, pool=Depends(get_pool)):
     row = await pool.fetchrow("SELECT * FROM users WHERE id=$1", user_id)
     if not row:
@@ -301,7 +429,16 @@ async def get_user_balance(user_id: UUID, pool=Depends(get_pool)):
     }
 
 
-@router.post("/{user_id}/update_balance/", summary="Update user balance")
+@router.post(
+    "/{user_id}/update_balance/",
+    response_model=BalanceUpdateResponse,
+    summary="Add delta to user balance",
+    description=(
+        "Adjusts a user's balance by the signed `amount` (may be negative).  "
+        "Use the dedicated `/payments/` and `/payments/withdrawals/` endpoints "
+        "for real money flows — this endpoint is intended for admin tooling."
+    ),
+)
 async def update_user_balance(user_id: UUID, body: UpdateBalanceRequest, pool=Depends(get_pool)):
     from decimal import Decimal
     amount = Decimal(str(body.amount))
@@ -314,7 +451,13 @@ async def update_user_balance(user_id: UUID, body: UpdateBalanceRequest, pool=De
     return {"balance": row["balance"], "message": "Balance updated successfully"}
 
 
-@router.get("/{user_id}/role/", summary="Get user role")
+@router.get(
+    "/{user_id}/role/",
+    response_model=UserRoleResponse,
+    summary="Get user role",
+    description="Returns the user's role and a human-readable display label.",
+    responses={400: {"description": "Not used by this endpoint"}},
+)
 async def get_user_role(user_id: UUID, pool=Depends(get_pool)):
     row = await pool.fetchrow("SELECT role FROM users WHERE id=$1", user_id)
     if not row:
@@ -322,7 +465,16 @@ async def get_user_role(user_id: UUID, pool=Depends(get_pool)):
     return {"role": row["role"], "role_display": _role_display(row["role"])}
 
 
-@router.get("/{user_id}/ws_token/", summary="Get WebSocket JWT token")
+@router.get(
+    "/{user_id}/ws_token/",
+    response_model=WsTokenResponse,
+    summary="Issue WebSocket JWT",
+    description=(
+        "Returns a short-lived HS256 JWT consumed by the WebSocket gateway to "
+        "authenticate the client.  Token TTL is exposed as `expires_in` (seconds)."
+    ),
+    responses={400: {"description": "Not used by this endpoint"}},
+)
 async def get_ws_token(user_id: UUID, pool=Depends(get_pool)):
     exists = await pool.fetchval("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", user_id)
     if not exists:

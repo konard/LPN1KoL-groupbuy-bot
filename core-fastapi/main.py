@@ -49,14 +49,31 @@ async def lifespan(app: FastAPI):
         logger.info("Core service stopped")
 
 
+TAGS_METADATA = [
+    {"name": "health", "description": "Liveness probe used by Docker / nginx."},
+    {"name": "users", "description": "User CRUD, lookup, sessions, balance, role and WebSocket token endpoints."},
+    {"name": "procurements", "description": "Group-buy procurements: create, list, join, lifecycle transitions."},
+    {"name": "payments", "description": "Payment intents and withdrawal requests."},
+    {"name": "chat", "description": "In-procurement chat messages."},
+    {"name": "buyer-requests", "description": "Standalone buyer requests."},
+    {"name": "news", "description": "Public news feed."},
+    {"name": "polls", "description": "Polls attached to procurements or stand-alone."},
+    {"name": "suppliers", "description": "Supplier company profiles and price-lists."},
+    {"name": "invitations", "description": "Organizer ↔ supplier / buyer invitations."},
+]
+
 app = FastAPI(
     title="GroupBuy Bot API",
     version="1.0.0",
-    description="API for GroupBuy Bot — a multi-platform group purchasing bot",
+    description=(
+        "Core REST API for GroupBuy Bot — a multi-platform group purchasing bot. "
+        "All endpoints are served behind `/api/` by nginx in production."
+    ),
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/schema/openapi.json",
+    openapi_tags=TAGS_METADATA,
 )
 
 app.add_middleware(

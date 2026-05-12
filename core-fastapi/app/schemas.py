@@ -5,12 +5,51 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
     status: str
     service: str = "core"
+
+
+class ErrorDetail(BaseModel):
+    """Standard error response envelope used by HTTPException."""
+
+    detail: Any = Field(..., description="Human-readable error message or per-field validation details")
+
+
+class ExistsResponse(BaseModel):
+    """Boolean existence check returned by /api/users/check_exists/."""
+
+    exists: bool
+
+
+class MessageResponse(BaseModel):
+    """Single-field acknowledgement (e.g. session cleared)."""
+
+    message: str
+
+
+class BalanceUpdateResponse(BaseModel):
+    """Response returned by POST /api/users/{id}/update_balance/."""
+
+    balance: Decimal
+    message: str
+
+
+class UserRoleResponse(BaseModel):
+    """Response returned by GET /api/users/{id}/role/."""
+
+    role: str
+    role_display: str
+
+
+class WsTokenResponse(BaseModel):
+    """JWT token returned by GET /api/users/{id}/ws_token/."""
+
+    token: str
+    expires_in: int
 
 
 # ─── User schemas ─────────────────────────────────────────────────────────────
