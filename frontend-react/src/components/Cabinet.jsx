@@ -472,7 +472,30 @@ function Cabinet() {
     if (!user) return;
     setProcurementsLoading(true);
     try {
-      const coreId = user.coreId || user.id;
+      // Resolve a valid core user id before any /api/users/{id}/… calls.
+      // After login the coreId is fetched asynchronously and persisted to
+      // localStorage; if the user opens the Cabinet before that completes
+      // (or if the original sync failed and was never retried), coreId may
+      // be missing.  We MUST NOT fall back to user.id (the auth-service
+      // uuid) — core's users table may not have a record with that id yet,
+      // which is what causes /api/users/{uuid}/balance/ to return 404 in
+      // the Cabinet (issue #264).  Instead, re-fetch from core by email.
+      let coreId = user.coreId;
+      if (!coreId && user.email) {
+        try {
+          const coreUser = await api.getUserByEmail(user.email);
+          if (coreUser && coreUser.id) {
+            coreId = coreUser.id;
+            localStorage.setItem('coreUserId', String(coreId));
+          }
+        } catch (_) {
+          // Best-effort; the requests below will simply return null.
+        }
+      }
+      if (!coreId) {
+        setProcurementsLoading(false);
+        return;
+      }
       const [balance, procurements, notifications] = await Promise.all([
         api.getUserBalance(coreId).catch(() => null),
         api.getUserProcurements(coreId).catch(() => null),
@@ -506,8 +529,8 @@ function Cabinet() {
       let participating = [];
       if (procurements) {
         if (Array.isArray(procurements)) {
-          organized = procurements.filter((p) => p.organizer === (user.coreId || user.id));
-          participating = procurements.filter((p) => p.organizer !== (user.coreId || user.id));
+          organized = procurements.filter((p) => p.organizer === coreId);
+          participating = procurements.filter((p) => p.organizer !== coreId);
         } else {
           organized = procurements.organized || [];
           participating = procurements.participating || [];
