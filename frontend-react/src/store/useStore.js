@@ -117,14 +117,20 @@ export const useStore = create((set, get) => ({
       const payload = JSON.parse(atob(tokens.accessToken.split('.')[1]));
       const user = { id: payload.sub, email: payload.email, role: payload.role, coreId: null };
       localStorage.setItem('userId', user.id);
-      set({ user, isLoading: false, loginModalOpen: false, otpPending: null });
-      // Fetch core user ID (integer) needed for core API calls — fire-and-forget
-      api.getUserByEmail(payload.email).then((coreUser) => {
+      // Resolve the core user record BEFORE navigating into the Cabinet so
+      // /api/users/{coreId}/balance/ etc. don't fire with a missing/stale
+      // coreId (issue #264).  Failures are logged but do not block login —
+      // Cabinet itself also retries by-email as a safety net.
+      try {
+        const coreUser = await api.getUserByEmail(payload.email);
         if (coreUser && coreUser.id) {
+          user.coreId = coreUser.id;
           localStorage.setItem('coreUserId', String(coreUser.id));
-          set((state) => ({ user: state.user ? { ...state.user, coreId: coreUser.id } : state.user }));
         }
-      }).catch(() => {});
+      } catch (_) {
+        // Best-effort; Cabinet will re-attempt
+      }
+      set({ user, isLoading: false, loginModalOpen: false, otpPending: null });
       get().loadProcurements();
       return user;
     } catch (error) {
@@ -181,14 +187,21 @@ export const useStore = create((set, get) => ({
       const payload = JSON.parse(atob(tokens.accessToken.split('.')[1]));
       const user = { id: payload.sub, email: payload.email, role: payload.role, coreId: null };
       localStorage.setItem('userId', user.id);
-      set({ user, isLoading: false, loginModalOpen: false, otpPending: null });
-      // Fetch core user ID (integer) needed for core API calls — fire-and-forget
-      api.getUserByEmail(payload.email).then((coreUser) => {
+      // Resolve the core user record BEFORE letting the user land in the
+      // Cabinet.  Auth-service syncs to core during /register/confirm (issue
+      // #264 — registration now fails if that sync fails), so by this point
+      // the core record should exist; if for some reason it doesn't, Cabinet
+      // retries by-email as a fallback.
+      try {
+        const coreUser = await api.getUserByEmail(payload.email);
         if (coreUser && coreUser.id) {
+          user.coreId = coreUser.id;
           localStorage.setItem('coreUserId', String(coreUser.id));
-          set((state) => ({ user: state.user ? { ...state.user, coreId: coreUser.id } : state.user }));
         }
-      }).catch(() => {});
+      } catch (_) {
+        // Best-effort; Cabinet will re-attempt
+      }
+      set({ user, isLoading: false, loginModalOpen: false, otpPending: null });
       get().loadProcurements();
       return user;
     } catch (error) {

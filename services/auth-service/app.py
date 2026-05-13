@@ -228,7 +228,7 @@ async def _send_otp_email(email: str, otp: str, context: Literal["login", "regis
         logger.warning("Failed to send OTP email to %s: %s", email, exc)
 
 
-async def _sync_user_to_core(user: dict) -> None:
+async def _sync_user_to_core(user: dict, *, raise_on_error: bool = False) -> None:
     """Sync the auth-service user into core's users table.
 
     Passes the auth-service id explicitly so that core's users.id matches the
@@ -237,6 +237,11 @@ async def _sync_user_to_core(user: dict) -> None:
     sends the auth-service uuid but core has a different auto-generated uuid
     for the same person (issue #256).  Core's POST /api/users/ is idempotent
     (ON CONFLICT DO UPDATE), so retrying the call on every login is safe.
+
+    When ``raise_on_error`` is True (used during registration), any HTTP/network
+    failure is re-raised so the caller can fail loudly — see issue #264, where
+    silent core-sync failures during registration left users without a core
+    record and caused 404s on every subsequent /api/users/{id}/… call.
     """
     body = {
         "id": str(user["id"]),
@@ -258,8 +263,14 @@ async def _sync_user_to_core(user: dict) -> None:
                     "CoreSync HTTP %d for %s: %s",
                     resp.status_code, user["email"], resp.text,
                 )
+                if raise_on_error:
+                    raise RuntimeError(
+                        f"core sync returned HTTP {resp.status_code}: {resp.text}"
+                    )
     except Exception as exc:
         logger.warning("CoreSync failed for %s: %s", user["email"], exc)
+        if raise_on_error:
+            raise
 
 
 def _validate_phone(phone: str) -> None:
@@ -395,7 +406,12 @@ async def confirm_registration(body: ConfirmRegistrationRequest):
     await kv_del(f"reg:pending:{body.phone}")
 
     pool = await get_pool()
-    role = pending.get("role") or "user"
+    # Default role is "buyer" rather than the literal "user":
+    #   * "buyer" is one of the business roles core/Cabinet expects
+    #     (buyer/organizer/supplier) — the previous "user" default leaked into
+    #     core's users.role column where it is also valid but has no
+    #     display name (issue #264).
+    role = pending.get("role") or "buyer"
     row = await pool.fetchrow(
         """
         INSERT INTO users(phone, email, first_name, last_name, role, is_email_verified)
@@ -413,10 +429,24 @@ async def confirm_registration(body: ConfirmRegistrationRequest):
         "last_name": row["last_name"],
         "role": row["role"],
     }
-    # Await sync so the frontend's follow-up /api/users/{id}/... calls
-    # always find the user (issue #256).  The helper swallows errors so a
-    # transient core outage does not break registration.
-    await _sync_user_to_core(user)
+    # Sync to core SYNCHRONOUSLY and fail loudly on error.  Without this,
+    # transient core outages during registration produce auth-service users
+    # that have no matching core record, breaking every later
+    # /api/users/{id}/balance/, /procurements/user/{id}/, etc. call from the
+    # Cabinet (issue #264).  Rolling back the auth row keeps both sides in
+    # sync; the user can simply retry registration.
+    try:
+        await _sync_user_to_core(user, raise_on_error=True)
+    except Exception as exc:
+        logger.error(
+            "Registration aborted — core sync failed for %s: %s",
+            user["email"], exc,
+        )
+        await pool.execute("DELETE FROM users WHERE id=$1", row["id"])
+        raise HTTPException(
+            status_code=503,
+            detail="Registration temporarily unavailable. Please try again in a moment.",
+        )
 
     tokens = await _generate_tokens(str(row["id"]), row["email"], row["role"])
     return {"success": True, "data": tokens}
